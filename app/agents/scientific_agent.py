@@ -685,10 +685,13 @@ class ScientificAgent:
                 selected_skills=state.selected_skills,
                 current_step_tools=step_filter,
             )
+            selection_files = known_filenames or (
+                list(resources.available_files) if len(resources.available_files) == 1 else []
+            )
             argument_context = {
                 "query": query,
-                "filename": known_filenames[0] if len(known_filenames) == 1 else None,
-                "filenames": known_filenames or None,
+                "filename": selection_files[0] if len(selection_files) == 1 else None,
+                "filenames": selection_files or None,
                 "group": "structure_type" if any(word in query.lower() for word in ("结构", "structure", "fused", "cyclic")) else None,
                 "datasource_id": datasource_id,
                 "dataset_version": effective_dataset_version,
