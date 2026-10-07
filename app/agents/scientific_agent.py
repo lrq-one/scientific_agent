@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 import re
@@ -1272,6 +1273,37 @@ class ScientificAgent:
         issues.extend(state.uncertainties)
         return list(dict.fromkeys(issues))
 
+    @staticmethod
+    def _format_evidence_value(value) -> str:
+        if isinstance(value, list) and value and all(isinstance(row, dict) for row in value):
+            columns: list[str] = []
+            for row in value[:20]:
+                for key in row:
+                    if key not in columns:
+                        columns.append(str(key))
+            columns = columns[:8]
+            if columns:
+                lines = [
+                    "| " + " | ".join(columns) + " |",
+                    "| " + " | ".join("---" for _ in columns) + " |",
+                ]
+                for row in value[:8]:
+                    lines.append(
+                        "| "
+                        + " | ".join(str(row.get(column, "")).replace("|", "\\|") for column in columns)
+                        + " |"
+                    )
+                if len(value) > 8:
+                    lines.append(f"\n（共 {len(value)} 行，这里展示前 8 行）")
+                return "\n".join(lines)
+        if isinstance(value, dict):
+            return "```json\n" + json.dumps(value, ensure_ascii=False, indent=2, default=str)[:4000] + "\n```"
+        if isinstance(value, list):
+            preview = value[:20]
+            suffix = f" …（共 {len(value)} 项）" if len(value) > 20 else ""
+            return f"{preview}{suffix}"
+        return str(value)
+
     def _finalize(self, state: ScientificAgentState) -> str:
         state.claims = []
         quality_issues = self._evidence_quality_issues(state)
@@ -1286,52 +1318,94 @@ class ScientificAgent:
             state.quality_status = "INSUFFICIENT_EVIDENCE"
         else:
             state.quality_status = "SUPPORTED_CONCLUSION"
+
         if quality_issues:
+            heading = {
+                "EXECUTION_FAILED": "执行未完成",
+                "CONFLICTING_EVIDENCE": "证据存在冲突",
+                "NO_DATA": "没有可用数据",
+                "INSUFFICIENT_EVIDENCE": "证据不足",
+            }.get(state.quality_status, "当前无法形成可靠结论")
             lines = [
-                state.quality_status,
+                f"## {heading}",
                 "",
-                "当前记录不足以生成确定性科研结论：",
+                "我不能基于当前记录给出确定性科研结论，原因是：",
                 *[f"- {issue}" for issue in quality_issues],
             ]
             if any("0 rows" in issue for issue in quality_issues):
-                lines.append("- 0 rows 只表示本次查询未返回记录，不等价于科学上不存在。")
+                lines.append("- 0 rows 只表示本次查询在当前范围内没有返回记录，不等价于科学对象不存在。")
+            if state.evidence:
+                lines += ["", "**已经获得但不足以单独支撑结论的证据**"]
+                for item in state.evidence[:6]:
+                    lines.append(
+                        f"- `{item.evidence_id}` {item.claim}（来源：{item.source}"
+                        + (f"；版本：{item.dataset_version}" if item.dataset_version else "")
+                        + "）"
+                    )
             return "\n".join(lines)
-        lines = ["## 分析结论", "", "**Observed Evidence（确定性计算）**"]
-        if state.evidence:
-            for item in state.evidence:
-                claim_text = f"{item.claim}：{item.value}"
-                linked_ids = [item.evidence_id]
-                if item.claim == "文件与训练集按 molecule_id 关联核对":
-                    linked_ids = [prior.evidence_id for prior in state.evidence if prior.claim in {
+
+        lines = ["## 分析结论", "", "**证据**"]
+        for item in state.evidence:
+            formatted = self._format_evidence_value(item.value)
+            claim_text = f"{item.claim}：{item.value}"
+            linked_ids = [item.evidence_id]
+            if item.claim == "文件与训练集按 molecule_id 关联核对":
+                linked_ids = [
+                    prior.evidence_id
+                    for prior in state.evidence
+                    if prior.claim in {
                         "用于跨资源关联的文件分子与结构类型",
                         "文件分子在版本化训练集中的原始关联行",
                         item.claim,
-                    }]
-                state.claims.append(GroundedClaim(text=claim_text, evidence_ids=linked_ids))
-                lines.append(f"- {claim_text}（来源：{item.source}；Evidence `{item.evidence_id}`）")
-        else:
-            lines.append("- 当前没有足够的可用资源形成数值证据。")
-        lines += ["", "**Interpretation（解释）**"]
+                    }
+                ]
+            state.claims.append(GroundedClaim(text=claim_text, evidence_ids=linked_ids))
+            version = f"；版本：{item.dataset_version}" if item.dataset_version else ""
+            lines += [
+                "",
+                f"**{item.claim}**",
+                formatted,
+                f"来源：`{item.source}`{version}；Evidence `{item.evidence_id}`；ToolCall `{item.tool_call_id}`",
+            ]
+
+        lines += ["", "**解释**"]
         fused_error = next((e for e in state.evidence if "fused_ring MAE" in e.claim), None)
         coverage = next((e for e in state.evidence if "覆盖数" in e.claim), None)
         if fused_error and coverage:
             interpretation = (
-                f"synthetic demo 中 fused_ring 的误差为 {fused_error.value}，"
-                f"本次查询覆盖数为 {coverage.value} 条；两者不能单独证明因果关系。"
+                f"当前观测到 fused-ring 误差证据为 {fused_error.value}，"
+                f"对应覆盖数为 {coverage.value}。这两项可以用于发现值得检查的关联，"
+                "但不能仅凭它们证明训练覆盖导致了误差差异。"
             )
-            state.claims.append(GroundedClaim(
-                text=interpretation,
-                evidence_ids=[fused_error.evidence_id, coverage.evidence_id],
-                category="interpretation",
-            ))
-            lines.append(f"- {interpretation}（Evidence `{fused_error.evidence_id}`、`{coverage.evidence_id}`）")
+            state.claims.append(
+                GroundedClaim(
+                    text=interpretation,
+                    evidence_ids=[fused_error.evidence_id, coverage.evidence_id],
+                    category="interpretation",
+                )
+            )
+            lines.append(
+                f"- {interpretation}（Evidence `{fused_error.evidence_id}`、`{coverage.evidence_id}`）"
+            )
         elif state.task_type == "database_analysis":
-            lines.append("- 仅陈列上述查询观测值；未验证查询范围、筛选条件与数据版本前，不推断总体覆盖不足。")
+            lines.append("- 上述结论只基于当前授权数据库查询返回的观测值；不把相关性或计数自动解释为因果。")
         elif state.task_type == "file_analysis":
-            lines.append("- 结果来自上传文件或明确标记的 synthetic demo 文件。")
+            lines.append("- 上述数值由文件分析工具确定性计算得到；没有使用语言模型进行数值心算。")
+        elif state.task_type == "mixed_analysis":
+            lines.append("- 文件侧与数据库侧证据分别保留来源；只有在稳定关联键核对成功时才做跨资源对应解释。")
         else:
-            lines.append("- 请上传 CSV/Excel 或明确指定已授权数据源以继续分析。")
-        lines += ["", "**Uncertainty（不确定性）**", "- Demo fixtures are synthetic and only used to verify the execution pipeline.", "- 未配置真实 TC-TopoRT 权重，未执行真实模型预测。"]
+            lines.append("- 结论仅使用上面列出的已记录 Evidence。")
+
+        synthetic = [
+            item for item in state.evidence
+            if item.dataset_version and item.dataset_version.startswith("synthetic_demo")
+        ]
+        if synthetic:
+            lines += [
+                "",
+                "**数据说明**",
+                "- 当前结果包含明确标记为 synthetic demo 的 Evidence，只用于验证执行链路，不能外推为真实实验结论。",
+            ]
         return "\n".join(lines)
 
     async def resume(self, thread_id: str, answer: str, user_id: str | None = None) -> AsyncIterator[SSEEvent]:
