@@ -1,11 +1,7 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-      - chatgpt/agent-completion-v2
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   backend:
