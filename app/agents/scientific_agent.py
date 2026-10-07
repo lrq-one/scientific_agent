@@ -1605,7 +1605,9 @@ class ScientificAgent:
             ]
             if missing:
                 issues.append(f"Evidence {item.evidence_id} 缺少必需字段：{', '.join(missing)}")
-        issues.extend(state.uncertainties)
+        # Uncertainty is reported separately from blocking quality issues.
+        # A supported observation may still carry caveats; caveats must not
+        # automatically downgrade the entire task to INSUFFICIENT_EVIDENCE.
         return list(dict.fromkeys(issues))
 
     @staticmethod
@@ -1732,6 +1734,10 @@ class ScientificAgent:
             lines.append("- 文件侧与数据库侧证据分别保留来源；只有在稳定关联键核对成功时才做跨资源对应解释。")
         else:
             lines.append("- 结论仅使用上面列出的已记录 Evidence。")
+
+        if state.uncertainties:
+            lines += ["", "**不确定性与限制**"]
+            lines.extend(f"- {item}" for item in dict.fromkeys(state.uncertainties))
 
         synthetic = [
             item for item in state.evidence
