@@ -72,9 +72,9 @@ TOOL_SPECS = [
     _spec("execute_readonly_sql", "Execute SQL Guard-approved read-only SQL.", "database", ["sql"], "bounded query rows", properties={"params": {"type": "object"}}, risk_level="medium"),
     _spec("get_molecule_features", "Retrieve molecular features through Scientific MCP.", "mcp", ["molecule_id"], "feature object"),
     _spec("predict_rt", "Predict retention time with a registered model.", "scientific_model", ["smiles"], "prediction with provenance", risk_level="medium"),
-    _spec("compare_structure_groups", "Compare molecular structure subgroup metrics.", "scientific_model", ["rows", "group"], "group comparison", properties={"rows": {"type": "array", "items": {"type": "object"}}}),
+    _spec("compare_structure_groups", "Compare deterministic error metrics across structure groups.", "file", ["rows", "group"], "group comparison", properties={"rows": {"type": "array", "items": {"type": "object"}, "minItems": 1}}),
     _spec("save_result_table", "Save result rows as CSV or XLSX.", "artifact", ["rows", "format"], "table artifact descriptor", properties={"rows": {"type": "array", "items": {"type": "object"}}, "format": {"type": "string", "enum": ["csv", "xlsx"]}}, side_effect="creates_object"),
-    _spec("save_chart", "Persist a generated chart in object storage.", "artifact", ["content"], "chart artifact descriptor", side_effect="creates_object"),
+    _spec("save_chart", "Persist a validated PNG chart in object storage.", "artifact", ["image_base64", "filename"], "chart artifact descriptor", properties={"filename": {"type": "string", "pattern": "^[^/\\\\]+\\.png$"}}, side_effect="creates_object"),
 ]
 
 
