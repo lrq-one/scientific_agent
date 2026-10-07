@@ -1,0 +1,69 @@
+{
+  "generated_at": "2026-10-07T07:06:05+08:00",
+  "model": "qwen3.7-flash",
+  "enable_thinking": false,
+  "dataset_sha256": "d8aa5f27b02fb0b6ef5336fa150cf75b3a36b9af198541be9c4689e900afb295",
+  "dev": {
+    "baseline": {
+      "cases": 50,
+      "follow_up_routing_accuracy": 0.16,
+      "evidence_provenance_accuracy": 0.0,
+      "evidence_citation_completeness": 0.0,
+      "unnecessary_tool_call_rate": 0.6666666666666666,
+      "workflow_invocation_rate": 1.0,
+      "total_tool_calls": 174,
+      "tokens_per_follow_up": 2880.9,
+      "p95_follow_up_latency_ms": 32977.8256,
+      "reuse_tokens_per_follow_up": 2495.0416666666665,
+      "reuse_total_tool_calls": 80
+    },
+    "optimized": {
+      "cases": 50,
+      "follow_up_routing_accuracy": 1.0,
+      "evidence_provenance_accuracy": 1.0,
+      "evidence_citation_completeness": 1.0,
+      "unnecessary_tool_call_rate": 0.0,
+      "workflow_invocation_rate": 0.52,
+      "total_tool_calls": 88,
+      "tokens_per_follow_up": 1405.96,
+      "p95_follow_up_latency_ms": 8797.4947,
+      "reuse_tokens_per_follow_up": 0.0,
+      "reuse_total_tool_calls": 0
+    }
+  },
+  "frozen_test": {
+    "baseline": {
+      "cases": 20,
+      "follow_up_routing_accuracy": 0.15,
+      "evidence_provenance_accuracy": 0.0,
+      "evidence_citation_completeness": 0.0,
+      "unnecessary_tool_call_rate": 0.7777777777777778,
+      "workflow_invocation_rate": 1.0,
+      "total_tool_calls": 66,
+      "tokens_per_follow_up": 3944.7,
+      "p95_follow_up_latency_ms": 24907.04505,
+      "reuse_tokens_per_follow_up": 2676.8888888888887,
+      "reuse_total_tool_calls": 35
+    },
+    "optimized": {
+      "cases": 20,
+      "follow_up_routing_accuracy": 0.8,
+      "evidence_provenance_accuracy": 1.0,
+      "evidence_citation_completeness": 1.0,
+      "unnecessary_tool_call_rate": 0.0,
+      "workflow_invocation_rate": 0.5,
+      "total_tool_calls": 46,
+      "tokens_per_follow_up": 1398.5,
+      "p95_follow_up_latency_ms": 31361.65355,
+      "reuse_tokens_per_follow_up": 48.666666666666664,
+      "reuse_total_tool_calls": 0
+    }
+  },
+  "notes": [
+    "All token, latency and tool-call values come from saved per-case real runs.",
+    "Evaluation provenance uses an in-memory fixture shaped like persisted PostgreSQL rows, so latency excludes HTTP and PostgreSQL fetch time; actual PostgreSQL persistence and reuse were verified separately in a real four-turn smoke test.",
+    "Optimized metrics refer to the goal_restore_v2 run; earlier optimized run files are retained separately.",
+    "Frozen Test was rerun after a real four-turn smoke test exposed missing prior-goal restoration in REFINE; no classification rule was tuned using Test results.",
+    "Frozen Test P95 increased because workflow-allowed cases retain core Agent latency, although mean latency fell from 10136.4182 ms to 6744.1167 ms."
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "version": "tool-context-v1",
+  "created_before_any_dev_result": true,
+  "mapping": {
+    "discover file resources": [
+      "list_workspace_files",
+      "inspect_table"
+    ],
+    "inspect uploaded table": [
+      "inspect_table",
+      "profile_dataset"
+    ],
+    "read bounded records": [
+      "read_csv",
+      "read_excel",
+      "preview_table"
+    ],
+    "profile input": [
+      "inspect_table",
+      "profile_dataset"
+    ],
+    "compute overall metrics": [
+      "calculate_metrics",
+      "compare_models"
+    ],
+    "group by structure": [
+      "group_metrics",
+      "compare_structure_groups"
+    ],
+    "compare models": [
+      "compare_models",
+      "calculate_metrics"
+    ],
+    "rank residuals": [
+      "find_high_error_samples",
+      "filter_samples"
+    ],
+    "join on molecule": [
+      "join_tables",
+      "get_molecule_features"
+    ],
+    "filter rows": [
+      "filter_samples",
+      "find_high_error_samples"
+    ],
+    "create chart": [
+      "plot_metric_comparison",
+      "save_chart"
+    ],
+    "list authorized sources": [
+      "list_datasources",
+      "search_schema"
+    ],
+    "retrieve schema": [
+      "search_schema",
+      "get_table_schema"
+    ],
+    "inspect table schema": [
+      "get_table_schema",
+      "preview_table"
+    ],
+    "inspect relationships": [
+      "get_table_relationships",
+      "search_schema"
+    ],
+    "preview rows": [
+      "preview_table",
+      "get_table_schema"
+    ],
+    "execute approved SQL": [
+      "execute_readonly_sql",
+      "preview_table"
+    ],
+    "retrieve scientific features": [
+      "get_molecule_features",
+      "compare_structure_groups"
+    ],
+    "invoke configured model": [
+      "predict_rt",
+      "get_molecule_features"
+    ],
+    "summarize groups": [
+      "compare_structure_groups",
+      "group_metrics"
+    ],
+    "save table": [
+      "save_result_table",
+      "save_chart"
+    ],
+    "save figure": [
+      "save_chart",
+      "plot_metric_comparison"
+    ]
+  },
+  "sha256": "76cbea63cffc5f38351457af03d6eff1c96d9fc0bf7b558b704367e62bafd510"
+}

@@ -1,0 +1,29 @@
+{
+  "stage": "e2e",
+  "seed": 20261006,
+  "source_sha256": "352cb1e4bf872a0a456f0b26b01847cf9c606065ad85b23bde92e69627ca08c7",
+  "dev": [
+    "e2e-001",
+    "e2e-002",
+    "e2e-003",
+    "e2e-004",
+    "e2e-005",
+    "e2e-006",
+    "e2e-007",
+    "e2e-008",
+    "e2e-009",
+    "e2e-010",
+    "e2e-011",
+    "e2e-012",
+    "e2e-013",
+    "e2e-014",
+    "e2e-015",
+    "e2e-016",
+    "e2e-017",
+    "e2e-018",
+    "e2e-019",
+    "e2e-020"
+  ],
+  "test": [],
+  "note": "All current E2E cases are Dev/runtime evaluation only."
+}

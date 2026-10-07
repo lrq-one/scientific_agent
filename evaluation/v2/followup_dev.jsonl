@@ -1,0 +1,20 @@
+{"query":"证据呢？","expected":"EVIDENCE_EXPLANATION","has_context":true}
+{"query":"刚才为什么这么判断？","expected":"RESULT_EXPLANATION","has_context":true}
+{"query":"继续分析异常结构的预测误差","expected":"CONTINUE_ANALYSIS","has_context":true}
+{"query":"分析异常结构的预测误差","expected":"NEW_TASK","has_context":true}
+{"query":"换成 train_v2 再分析一次","expected":"REFINE_PREVIOUS_TASK","has_context":true}
+{"query":"重新运行上一项分析","expected":"RERUN_PREVIOUS_TASK","has_context":true}
+{"query":"刚才查询为什么报错？","expected":"ERROR_QUESTION","has_context":true}
+{"query":"比较这两份新上传文件的保留时间预测","expected":"NEW_TASK","has_context":true}
+{"query":"之前那个任务的证据呢？","expected":"EVIDENCE_EXPLANATION","has_context":true,"recent_count":2,"clarification":true}
+{"query":"证据呢？","expected":"EVIDENCE_EXPLANATION","has_context":false,"clarification":true}
+{"query":"不要画图，只输出表格","expected":"REFINE_PREVIOUS_TASK","has_context":true}
+{"query":"只看 fused-ring 子群","expected":"REFINE_PREVIOUS_TASK","has_context":true}
+{"query":"模型改为 model_v3","expected":"REFINE_PREVIOUS_TASK","has_context":true}
+{"query":"统计 train_v2 中的含环分子数","expected":"NEW_TASK","has_context":true}
+{"query":"展示原始 SQL 和参数","expected":"EVIDENCE_EXPLANATION","has_context":true}
+{"query":"这些数字是什么意思？","expected":"RESULT_EXPLANATION","has_context":true}
+{"query":"下一步检查模型误差来源","expected":"CONTINUE_ANALYSIS","has_context":true}
+{"query":"再执行一次刚才失败的分析","expected":"RERUN_PREVIOUS_TASK","has_context":true}
+{"query":"查询另一批实验的质量控制指标","expected":"NEW_TASK","has_context":true}
+{"query":"它靠谱吗？","expected":"RESULT_EXPLANATION","has_context":true}

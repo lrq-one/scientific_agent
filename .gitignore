@@ -1,0 +1,87 @@
+.venv/
+__pycache__/
+.pytest_cache/
+node_modules/
+web/dist/
+workspace/
+*.pyc
+*.egg-info/
+.env
+data/demo/training_demo.db
+
+
+# ============================================================
+# Local Python environment / cache
+# ============================================================
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ============================================================
+# Secrets / local environment
+# ============================================================
+.env
+.env.*
+!.env.example
+
+# ============================================================
+# Logs / runtime
+# ============================================================
+logs/
+*.log
+*.pid
+tmp/
+temp/
+workspace/
+
+# ============================================================
+# Frontend dependencies / build
+# ============================================================
+node_modules/
+web/node_modules/
+web/dist/
+web/build/
+web/.next/
+web/.vite/
+
+# ============================================================
+# ML / scientific large artifacts
+# ============================================================
+checkpoints/
+models/
+artifacts/
+outputs/
+runs/
+wandb/
+
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+
+# ============================================================
+# Local databases / vector databases
+# ============================================================
+qdrant_storage/
+postgres_data/
+redis_data/
+
+*.sqlite
+*.sqlite3
+
+# ============================================================
+# IDE / OS
+# ============================================================
+.idea/
+.DS_Store
+Thumbs.db
+
+
+evaluation/cache/

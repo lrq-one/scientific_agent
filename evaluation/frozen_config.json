@@ -1,0 +1,67 @@
+{
+  "frozen_at": "2026-10-06T23:30:00+08:00",
+  "seed": 20261006,
+  "model": "qwen3.7-flash",
+  "fallback_allowed": false,
+  "test_results_must_not_change_configuration": true,
+  "splits": {
+    "intent": "66778b356ad19e9d5f151700735049bc2e459222d10a84e54938bc63af5c1b64",
+    "skill_routing": "f26821c8aa01d4090e15c28b0ca3ecb64ffa468c9e3a120cca40993f2096e0e7",
+    "tool_routing": "c3cbf7ef95a225c908d8e6e6e3e40245c08c94d8b39ca210a5b19d2da1b1d226",
+    "schema_retrieval": "7c0272f0c767ca710ba98ef02ac5682a03e4570772c9dcec97559504d316c541",
+    "text2sql": "49fe0e65e4d2efe98eb17f76163044c3df65c57a438c2def2ec9e45ad2086084",
+    "followup": "d8aa5f27b02fb0b6ef5336fa150cf75b3a36b9af198541be9c4689e900afb295"
+  },
+  "intent": {
+    "method": "I2_hybrid_v2_nothinking",
+    "prompt_version": "intent-v2",
+    "enable_thinking": false,
+    "max_tokens": 1024
+  },
+  "skill_routing": {
+    "method": "S0_all9_nothinking",
+    "retrieval": "all_9_skills",
+    "enable_thinking": false,
+    "max_tokens": 1024
+  },
+  "tool_routing": {
+    "method": "T3_plan_step",
+    "fixture_version": "argument-context-v2",
+    "enable_thinking": false,
+    "max_tokens": 1024,
+    "execution_performed": false
+  },
+  "schema_retrieval": {
+    "method": "R1_bge_m3",
+    "embedding_model": "BAAI/bge-m3",
+    "top_k": 5
+  },
+  "text2sql": {
+    "method": "Q1_bm25",
+    "fixture_version": "output-contract-v2",
+    "top_k": 5,
+    "enable_thinking": false,
+    "max_tokens": 2048,
+    "repair_enabled": false,
+    "guard": "SQLGlot",
+    "execution": "PostgreSQL read-only"
+  },
+  "e2e": {
+    "dev_only": true,
+    "enable_thinking": false,
+    "max_tokens": 2048
+  },
+  "followup": {
+    "baseline": "all_messages_enter_agent_workflow",
+    "optimized": "conversation_context_resolver_and_persisted_evidence_reuse",
+    "final_implementation_version": "goal_restore_v2",
+    "final_run_directories": [
+      "followup_dev_optimized_goal_restore_v2",
+      "followup_test_optimized_goal_restore_v2"
+    ],
+    "enable_thinking": false,
+    "max_tokens": 2048,
+    "provenance_source": "persisted_fixture_equivalent_to_postgresql_rows",
+    "test_split_frozen": true
+  }
+}

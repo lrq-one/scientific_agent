@@ -1,0 +1,163 @@
+{
+  "generated_at": "2026-10-06T23:36:25+08:00",
+  "model": "qwen3.7-flash",
+  "real_llm": true,
+  "fallback_rate": 0.0,
+  "pricing": {
+    "currency": "CNY",
+    "input_per_million_tokens": 0.2,
+    "output_per_million_tokens": 0.8,
+    "source": "https://help.aliyun.com/zh/model-studio/qwen3-7-flash"
+  },
+  "exploration_telemetry": {
+    "finalized_api_requests": 2151,
+    "client_aborted_requests_without_usage": 10,
+    "attempted_api_requests": 2161,
+    "input_tokens_recorded": 1350022,
+    "output_tokens_recorded": 1244842,
+    "total_tokens_recorded": 2594864,
+    "cost_cny_recorded": 1.265878,
+    "note": "Token and cost totals are lower bounds because the provider returned no usage for client-aborted requests and some length-limit errors. API keys are never persisted."
+  },
+  "frozen_strategy_telemetry": {
+    "api_calls": 588,
+    "input_tokens": 318366,
+    "output_tokens": 59692,
+    "total_tokens": 378058,
+    "cost_cny": 0.1114268
+  },
+  "dev": {
+    "intent": {
+      "method": "I2_hybrid_v2_nothinking",
+      "cases": 80,
+      "all_field_accuracy": 0.85,
+      "task_accuracy": 1.0,
+      "macro_f1": 1.0,
+      "capability_f1": 1.0,
+      "complexity_accuracy": 0.85,
+      "mean_latency_ms": 1644.514625,
+      "p95_latency_ms": 2053.0275,
+      "total_tokens": 24637,
+      "fallback_rate": 0.0
+    },
+    "skill_routing": {
+      "method": "S0_all9_nothinking",
+      "cases": 100,
+      "top1_accuracy": 1.0,
+      "hit_at_3": 1.0,
+      "recall_at_3": 1.0,
+      "mrr": 1.0,
+      "macro_f1": 0.8943076552,
+      "mean_latency_ms": 728.41278,
+      "total_tokens": 78532,
+      "fallback_rate": 0.0
+    },
+    "tool_routing": {
+      "method": "T3_plan_step",
+      "cases": 100,
+      "selection_accuracy": 1.0,
+      "argument_exact_match": 0.48,
+      "argument_valid_rate": 1.0,
+      "execution_valid_rate": 1.0,
+      "unauthorized_tool_rate": 0.0,
+      "average_candidate_count": 1.68,
+      "candidate_reduction_rate": 0.9269565217,
+      "actual_executions": 0,
+      "fallback_rate": 0.0
+    },
+    "schema_retrieval": {
+      "method": "R1_bge_m3",
+      "cases": 70,
+      "table_recall_at_5": 0.919047619,
+      "column_recall_at_5": 0.9238095238,
+      "mrr": 0.9357142857,
+      "mean_latency_ms": 54.01662857
+    },
+    "text2sql": {
+      "method": "Q1_bm25_output_contract_v2",
+      "cases": 70,
+      "valid_sql_rate": 1.0,
+      "security_pass_rate": 1.0,
+      "execution_accuracy": 1.0,
+      "result_accuracy": 0.9142857143,
+      "schema_gold_table_recall": 1.0,
+      "repair_success_rate": 0.0,
+      "fallback_rate": 0.0
+    },
+    "e2e": {
+      "cases": 20,
+      "task_success_rate": 0.85,
+      "evidence_coverage": 0.77,
+      "tool_success_rate": 1.0,
+      "artifact_correctness": 0.5,
+      "average_tool_calls": 4.7,
+      "tool_calls_p50": 5.0,
+      "tool_calls_p95": 5.0,
+      "real_llm_rate": 1.0,
+      "fallback_rate": 0.0
+    },
+    "hitl_resume": {
+      "cases": 5,
+      "wait_rate": 1.0,
+      "checkpoint_persist_rate": 1.0,
+      "resume_success_rate": 1.0,
+      "final_answer_rate": 1.0,
+      "fallback_rate": 0.0
+    }
+  },
+  "frozen_test": {
+    "intent": {
+      "cases": 40,
+      "all_field_accuracy": 0.825,
+      "task_accuracy": 1.0,
+      "macro_f1": 1.0,
+      "capability_f1": 1.0,
+      "complexity_accuracy": 0.825,
+      "fallback_rate": 0.0
+    },
+    "skill_routing": {
+      "cases": 50,
+      "top1_accuracy": 1.0,
+      "hit_at_3": 1.0,
+      "recall_at_3": 1.0,
+      "mrr": 1.0,
+      "fallback_rate": 0.0
+    },
+    "tool_routing": {
+      "cases": 50,
+      "selection_accuracy": 0.94,
+      "argument_exact_match": 0.34,
+      "argument_valid_rate": 0.94,
+      "execution_valid_rate": 0.94,
+      "unauthorized_tool_rate": 0.0,
+      "fallback_rate": 0.0
+    },
+    "schema_retrieval": {
+      "cases": 30,
+      "table_recall_at_5": 0.8166666667,
+      "column_recall_at_5": 0.8222222222,
+      "mrr": 0.9
+    },
+    "text2sql": {
+      "cases": 30,
+      "valid_sql_rate": 1.0,
+      "security_pass_rate": 1.0,
+      "execution_accuracy": 1.0,
+      "result_accuracy": 0.9333333333,
+      "schema_gold_table_recall": 1.0,
+      "fallback_rate": 0.0
+    }
+  },
+  "verification": {
+    "backend": "50 passed",
+    "frontend": "4 passed",
+    "dataset_counts": {
+      "intent": 120,
+      "skill_routing": 150,
+      "tool_routing": 150,
+      "schema_retrieval": 100,
+      "text2sql": 100,
+      "e2e_dev": 20
+    }
+  }
+}

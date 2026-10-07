@@ -1,0 +1,29 @@
+{
+  "version": "tool-routing-context-v1",
+  "created_before_any_tool_dev_result": true,
+  "note": "The original dataset has no resource or selected-skill fields. This semantic context is frozen before scoring so T1-T3 can be evaluated without deriving context from model outputs.",
+  "by_step": {
+    "discover file resources": {"capabilities": ["file"], "skills": ["model_comparison"]},
+    "inspect uploaded table": {"capabilities": ["file"], "skills": ["dataset_quality_audit"]},
+    "read bounded records": {"capabilities": ["file"], "skills": ["dataset_quality_audit"]},
+    "profile input": {"capabilities": ["file"], "skills": ["dataset_quality_audit"]},
+    "compute overall metrics": {"capabilities": ["file"], "skills": ["model_comparison"]},
+    "group by structure": {"capabilities": ["file"], "skills": ["structure_subgroup_analysis"]},
+    "compare models": {"capabilities": ["file"], "skills": ["model_comparison"]},
+    "rank residuals": {"capabilities": ["file"], "skills": ["model_regression_diagnosis"]},
+    "join on molecule": {"capabilities": ["file"], "skills": ["dataset_quality_audit"]},
+    "filter rows": {"capabilities": ["file"], "skills": ["dataset_quality_audit"]},
+    "create chart": {"capabilities": ["artifact"], "skills": ["model_comparison"]},
+    "list authorized sources": {"capabilities": ["database"], "skills": ["training_coverage_analysis"]},
+    "retrieve schema": {"capabilities": ["database"], "skills": ["training_coverage_analysis"]},
+    "inspect table schema": {"capabilities": ["database"], "skills": ["training_coverage_analysis"]},
+    "inspect relationships": {"capabilities": ["database"], "skills": ["experiment_reproducibility_check"]},
+    "preview rows": {"capabilities": ["database"], "skills": ["training_coverage_analysis"]},
+    "execute approved SQL": {"capabilities": ["database"], "skills": ["training_coverage_analysis"]},
+    "retrieve scientific features": {"capabilities": ["mcp"], "skills": ["structure_subgroup_analysis"]},
+    "invoke configured model": {"capabilities": ["scientific_model"], "skills": ["rt_prediction_review"]},
+    "summarize groups": {"capabilities": ["scientific_model"], "skills": ["structure_subgroup_analysis"]},
+    "save table": {"capabilities": ["artifact"], "skills": ["scientific_result_summary"]},
+    "save figure": {"capabilities": ["artifact"], "skills": ["scientific_result_summary"]}
+  }
+}
