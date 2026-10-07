@@ -54,11 +54,16 @@ web/.vite/
 # ML / scientific large artifacts
 # ============================================================
 checkpoints/
-models/
-artifacts/
-outputs/
-runs/
-wandb/
+# Root-level ML/runtime artifacts only. Do not ignore app/models source code.
+/models/
+/artifacts/
+/outputs/
+/runs/
+/wandb/
+
+# app/models contains required Python source schemas and must be versioned.
+!app/models/
+!app/models/**
 
 *.pt
 *.pth
