@@ -876,7 +876,7 @@ class ScientificAgent:
                 # decorative extra hop for ordinary SQL/file workflows.
                 if molecule_match and "mcp" in state.available_tools:
                     yield event("TOOL_STARTED", "正在启动 DeepAgents 科研子任务", tool="deepagents_runtime")
-                    runtime_trace = await self.deep_runtime.run_scaffold(
+                    runtime_trace = await self.deep_runtime.run_bounded_subtask(
                         query, user_id, thread_id, state.selected_skills
                     )
                     state.tool_calls.append({
