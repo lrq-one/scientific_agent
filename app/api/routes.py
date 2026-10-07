@@ -297,6 +297,7 @@ async def conversation_chat_stream(
             "classification_source": follow_up.source,
             "clarification_question": follow_up.clarification_question,
             "refinement_patch": refinement_patch.model_dump(exclude_none=True) if refinement_patch else None,
+            "datasource_id": request.datasource_id,
         },
     )
 
@@ -386,6 +387,7 @@ async def conversation_chat_stream(
                         "follow_up_type": follow_up.follow_up_type,
                         "previous_task_id": previous_context["task"]["id"] if previous_context else None,
                         "classification_source": follow_up.source,
+                        "datasource_id": request.datasource_id,
                     }
                     repository.update_task(
                         task_id,
