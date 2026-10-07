@@ -21,6 +21,14 @@ const activeTaskId = computed(() => conversationActiveTask[conversationId.value]
 const currentStatus = computed(() => taskStatusForConversation(taskExecutions, conversationActiveTask, conversationId.value))
 const busy = computed(() => currentStatus.value === 'running' || currentStatus.value === 'cancelling')
 const cancelRequested = computed(() => currentStatus.value === 'cancelling')
+const retryableFailedQuery = computed(() => {
+  if (currentStatus.value !== 'failed') return ''
+  const failedTask = [...tasks.value].reverse().find(item => item.status === 'failed')
+  if (!failedTask) return ''
+  return [...messages.value].reverse().find(
+    item => item.role === 'user' && item.task_id === failedTask.id,
+  )?.content || ''
+})
 const query = ref('')
 const datasourceId = ref('')
 const conversationLoading = ref(false)
