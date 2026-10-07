@@ -8,8 +8,8 @@ $BackendErr = Join-Path $RuntimeDir "backend.err.log"
 Set-Location $Root
 
 try {
-    & $Python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 1>> $BackendOut 2>> $BackendErr
-    exit $LASTEXITCODE
+    $Process = Start-Process -FilePath $Python -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000") -WorkingDirectory $Root -RedirectStandardOutput $BackendOut -RedirectStandardError $BackendErr -NoNewWindow -Wait -PassThru
+    exit $Process.ExitCode
 }
 catch {
     $_ | Out-String | Add-Content -Path $BackendErr
