@@ -42,6 +42,11 @@ ENABLE_DEMO_DATA = os.getenv(
     "true" if APP_MODE in {"development", "dev", "demo"} else "false",
 ).strip().lower() in {"1", "true", "yes", "on"}
 
+ALLOW_DETERMINISTIC_LLM_FALLBACK = os.getenv(
+    "ALLOW_DETERMINISTIC_LLM_FALLBACK",
+    "true" if APP_MODE in {"development", "dev", "demo"} else "false",
+).strip().lower() in {"1", "true", "yes", "on"}
+
 MAX_REPLANS = int(os.getenv("MAX_REPLANS", "2"))
 MAX_TOOL_CALLS = int(os.getenv("MAX_TOOL_CALLS", "16"))
 TASK_TIMEOUT = int(os.getenv("TASK_TIMEOUT", "120"))
