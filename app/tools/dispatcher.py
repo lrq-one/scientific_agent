@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 from typing import Any
 
+from app.config import DEMO_DATA, ENABLE_DEMO_DATA
 from app.models.schemas import ResourceSummary, ToolResult
 from app.services.artifacts import ArtifactService
 from app.services.mcp_client import ScientificMCPClient
@@ -56,6 +57,10 @@ class ToolDispatcher:
         materialized = self.storage.materialize(context.user_id, context.thread_id, filename)
         if materialized is not None:
             return materialized
+        if ENABLE_DEMO_DATA:
+            demo = (DEMO_DATA / Path(filename).name).resolve()
+            if demo.exists() and demo.parent == DEMO_DATA.resolve():
+                return demo
         raise FileNotFoundError(filename)
 
     @staticmethod
