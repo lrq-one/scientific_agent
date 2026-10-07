@@ -520,6 +520,9 @@ async def cancel_waiting_task(conversation_id: str | None = None, task_id: str =
 @router.post("/api/agent/resume")
 async def resume_agent(request: ResumeRequest, user_id: str = Depends(current_user)):
     repository = None
+    resume_mode = "checkpoint"
+    resume_query = None
+    resume_datasource_id = None
     if request.conversation_id or request.task_id:
         if not (request.conversation_id and request.task_id):
             raise HTTPException(status_code=400, detail="conversation_id and task_id must be supplied together")
@@ -528,15 +531,47 @@ async def resume_agent(request: ResumeRequest, user_id: str = Depends(current_us
         task = next((item for item in detail["tasks"] if item["id"] == request.task_id), None)
         if task is None or task["thread_id"] != request.thread_id:
             raise HTTPException(status_code=404, detail="resumable task not found")
+        waiting_event = next(
+            (
+                item for item in reversed(detail.get("events", []))
+                if item["task_id"] == request.task_id and item["event_type"] == "WAITING_FOR_USER"
+            ),
+            None,
+        )
+        waiting_payload = (waiting_event or {}).get("payload_json") or {}
+        if "missing_files" in waiting_payload:
+            resume_mode = "file_wait"
+            original_user = next(
+                (
+                    item["content"] for item in detail.get("messages", [])
+                    if item.get("task_id") == request.task_id and item.get("role") == "user"
+                ),
+                "",
+            )
+            if not original_user:
+                raise HTTPException(status_code=409, detail="cannot restore the original file-analysis request")
+            resume_query = original_user
+            answer_text = request.answer.strip()
+            if answer_text and answer_text not in {"已上传", "上传完成", "done", "ok"}:
+                resume_query = f"{resume_query}\n用户补充：{answer_text}"
+            resume_datasource_id = (task.get("intent_json") or {}).get("datasource_id")
         if not repository.claim_resume(request.task_id, request.conversation_id, request.thread_id):
             raise HTTPException(status_code=409, detail="task is not waiting, was already resumed, or has expired")
+        repository.add_message(request.conversation_id, "user", request.answer, request.task_id)
 
     elif (repository := conversation_repository()) is not None and repository.has_thread(request.thread_id):
         raise HTTPException(status_code=400, detail="persisted tasks require conversation_id and task_id for resume")
 
     async def generate():
         try:
-            async for item in agent.resume(request.thread_id, request.answer, user_id):
+            source = (
+                agent.stream(resume_query, user_id, request.thread_id, resume_datasource_id)
+                if resume_mode == "file_wait" and resume_query
+                else agent.resume(request.thread_id, request.answer, user_id)
+            )
+            if resume_mode == "file_wait":
+                agent.pending.pop(request.thread_id, None)
+            async for item in source:
                 if repository is not None:
                     if repository.is_cancelled(request.task_id):
                         yield encode_sse(SSEEvent(event="CANCELLED", message="用户已取消任务", data={"task_id": request.task_id}))
@@ -589,6 +624,19 @@ async def resume_agent(request: ResumeRequest, user_id: str = Depends(current_us
 
 @router.get("/api/tasks/{thread_id}")
 def task_status(thread_id: str, user_id: str = Depends(current_user)):
+    repository = conversation_repository()
+    if repository is not None:
+        task = repository.task_by_thread(thread_id)
+        if task is not None:
+            conversation_id = repository.owned_task_conversation(task["id"], user_id)
+            if conversation_id is None:
+                raise HTTPException(status_code=404, detail="task not found")
+            return {
+                "thread_id": thread_id,
+                "task_id": task["id"],
+                "conversation_id": conversation_id,
+                "status": task["status"],
+            }
     return {"thread_id": thread_id, "status": "waiting_for_user" if thread_id in agent.pending else "not_pending"}
 
 
