@@ -66,6 +66,18 @@ class ScientificAgent:
         self.deep_runtime = DeepAgentRuntime(self.checkpointing, self.workspace)
 
     @staticmethod
+    def _artifact_preferences(query: str) -> tuple[bool, bool]:
+        text = query.lower()
+        suppress_chart = any(word in text for word in ("不要画图", "不画图", "无需图", "no chart"))
+        wants_chart = not suppress_chart and any(
+            word in text for word in ("画图", "图表", "可视化", "png", "chart", "plot")
+        )
+        wants_table = any(
+            word in text for word in ("表格", "结果表", "导出", "保存", "csv", "xlsx", "excel", "table")
+        )
+        return wants_table, wants_chart
+
+    @staticmethod
     def _preferred_file_tool(query: str) -> str:
         text = query.lower()
         if any(word in text for word in ("高误差", "最大误差", "top error", "highest error")):
