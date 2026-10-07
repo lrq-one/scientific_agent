@@ -722,6 +722,7 @@ class ScientificAgent:
 
             known_filenames = re.findall(r"[\w.-]+\.(?:csv|xlsx|xls)", query, flags=re.I)
             molecule_match = re.search(r"\b((?:M|T)\d{3,})\b", query, flags=re.I)
+            deep_mcp_results: dict[str, ToolResult] = {}
             first_tool = {
                 "file_analysis": self._preferred_file_tool(query) if intent.complexity == "simple" else "calculate_metrics",
                 "mixed_analysis": "calculate_metrics",
@@ -825,10 +826,71 @@ class ScientificAgent:
                     llm_telemetry=planning_telemetry,
                     max_replans=MAX_REPLANS,
                 )
-                yield event("TOOL_STARTED", "正在启动 DeepAgents Runtime", tool="deepagents_runtime")
-                runtime_trace = await self.deep_runtime.run_scaffold(query, user_id, thread_id, state.selected_skills)
-                state.tool_calls.append({"tool_call_id": "runtime-1", "tool": "deepagents_runtime", "success": True})
-                yield event("TOOL_FINISHED", "DeepAgents Runtime 已就绪", tool="deepagents_runtime", result=runtime_trace)
+                # DeepAgents is used only when it has a concrete bounded sub-task:
+                # explicit molecule-level MCP enrichment. It is not invoked as a
+                # decorative extra hop for ordinary SQL/file workflows.
+                if molecule_match and "mcp" in state.available_tools:
+                    yield event("TOOL_STARTED", "正在启动 DeepAgents 科研子任务", tool="deepagents_runtime")
+                    runtime_trace = await self.deep_runtime.run_scaffold(
+                        query, user_id, thread_id, state.selected_skills
+                    )
+                    state.tool_calls.append({
+                        "tool_call_id": f"runtime-{len(state.tool_calls) + 1}",
+                        "tool": "deepagents_runtime",
+                        "success": True,
+                    })
+                    yield event(
+                        "TOOL_FINISHED",
+                        "DeepAgents 科研子任务完成",
+                        tool="deepagents_runtime",
+                        result=runtime_trace,
+                    )
+                    for runtime_call in runtime_trace.get("tool_calls", []):
+                        if runtime_call.get("tool") != "mcp:get_molecule_features":
+                            continue
+                        result_payload = runtime_call.get("result")
+                        if not isinstance(result_payload, dict):
+                            continue
+                        mcp_result = ToolResult.model_validate(result_payload)
+                        molecule_id = str(runtime_call.get("molecule_id") or molecule_match.group(1)).upper()
+                        deep_mcp_results[molecule_id] = mcp_result
+                        mcp_call_id = self._record_tool(state, "mcp:get_molecule_features", mcp_result)
+                        if mcp_result.success:
+                            payload = (
+                                mcp_result.data.get("result", mcp_result.data)
+                                if isinstance(mcp_result.data, dict) else {}
+                            )
+                            structure_type = payload.get("structure_type") if isinstance(payload, dict) else None
+                            mcp_evidence = self._add_evidence(
+                                state,
+                                f"{molecule_id} 结构类型",
+                                structure_type,
+                                "mcp",
+                                "mcp:get_molecule_features",
+                                mcp_call_id,
+                                None,
+                            )
+                            yield event(
+                                "EVIDENCE_ADDED",
+                                "DeepAgents 已获得 MCP 科研证据",
+                                evidence=mcp_evidence.model_dump(),
+                            )
+                        else:
+                            decision = classify_failure(
+                                mcp_result.error or "MCP service unavailable",
+                                tool="mcp:get_molecule_features",
+                            )
+                            state.uncertainties.append(
+                                f"DeepAgents MCP 子任务未获得 {molecule_id} 分子特征："
+                                f"{mcp_result.error or decision.failure_kind}"
+                            )
+                            yield event(
+                                "RECOVERY_DECISION",
+                                "DeepAgents MCP 子任务失败，主计划继续使用其他已验证证据",
+                                failure_kind=decision.failure_kind,
+                                action=decision.action,
+                                reason=decision.reason[:500],
+                            )
             execute_step = (
                 self._start_plan_step(state, "execute")
                 if any(step.step_id == "execute" for step in state.plan) else None
