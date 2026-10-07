@@ -1049,11 +1049,38 @@ class ScientificAgent:
                             comparison_step.observations.append({"tool": "calculate_metrics", "source": name, "success": result.success})
                         yield event("TOOL_FINISHED", "指标计算完成", tool="calculate_metrics", result=result.model_dump())
                         if not result.success:
+                            decision = classify_failure(result.error or "file metric tool failed", tool="calculate_metrics")
+                            if decision.action == "alternative_tool":
+                                fallback = self.files.inspect_table(path)
+                                fallback_call = self._record_tool(state, "inspect_table", fallback)
+                                result.metadata["recovered"] = fallback.success
+                                result.metadata["alternative_tool"] = "inspect_table"
+                                yield event(
+                                    "RECOVERY_DECISION",
+                                    "指标计算缺少所需字段，改为检查文件实际列结构",
+                                    failure_kind=decision.failure_kind,
+                                    action=decision.action,
+                                    alternative_tool="inspect_table",
+                                    reason=decision.reason[:500],
+                                )
+                                yield event("TOOL_FINISHED", "已检查文件实际列结构", tool="inspect_table", result=fallback.model_dump())
+                                if fallback.success:
+                                    evidence = self._add_evidence(
+                                        state,
+                                        f"{name} 可用列与行数",
+                                        fallback.data,
+                                        "file",
+                                        name,
+                                        fallback_call,
+                                        self._file_dataset_version(path),
+                                    )
+                                    yield event("EVIDENCE_ADDED", "已保存文件结构证据", evidence=evidence.model_dump())
+                                    state.uncertainties.append(f"{name} 无法计算请求指标：{result.error}")
                             if comparison_step:
                                 comparison_step.status = "failed"
                                 comparison_step.error = result.error
                             state.final_answer = self._finalize(state)
-                            yield event("FINAL_ANSWER", "分析未完成", answer=state.final_answer, state=state.model_dump(mode="json"))
+                            yield event("FINAL_ANSWER", "当前字段不足以完成分析", answer=state.final_answer, state=state.model_dump(mode="json"))
                             return
                         model_results[name] = result.data
                         evidence = self._add_evidence(
@@ -1179,11 +1206,38 @@ class ScientificAgent:
                             subgroup_step.observations.append({"tool": "group_metrics", "success": subgroup.success})
                         yield event("TOOL_FINISHED", "结构子群分析完成", tool="group_metrics", result=subgroup.model_dump())
                         if not subgroup.success:
+                            decision = classify_failure(subgroup.error or "group analysis failed", tool="group_metrics")
+                            if decision.action == "alternative_tool":
+                                fallback = self.files.inspect_table(target_path)
+                                fallback_call = self._record_tool(state, "inspect_table", fallback)
+                                subgroup.metadata["recovered"] = fallback.success
+                                subgroup.metadata["alternative_tool"] = "inspect_table"
+                                yield event(
+                                    "RECOVERY_DECISION",
+                                    "子群分析缺少分组字段，改为检查实际列结构",
+                                    failure_kind=decision.failure_kind,
+                                    action=decision.action,
+                                    alternative_tool="inspect_table",
+                                    reason=decision.reason[:500],
+                                )
+                                yield event("TOOL_FINISHED", "已检查文件实际列结构", tool="inspect_table", result=fallback.model_dump())
+                                if fallback.success:
+                                    evidence = self._add_evidence(
+                                        state,
+                                        f"{target_name} 可用列与行数",
+                                        fallback.data,
+                                        "file",
+                                        target_name,
+                                        fallback_call,
+                                        self._file_dataset_version(target_path),
+                                    )
+                                    yield event("EVIDENCE_ADDED", "已保存文件结构证据", evidence=evidence.model_dump())
+                                    state.uncertainties.append(f"无法完成结构子群分析：{subgroup.error}")
                             if subgroup_step:
                                 subgroup_step.status = "failed"
                                 subgroup_step.error = subgroup.error
                             state.final_answer = self._finalize(state)
-                            yield event("FINAL_ANSWER", "分析未完成", answer=state.final_answer, state=state.model_dump(mode="json"))
+                            yield event("FINAL_ANSWER", "当前字段不足以完成子群分析", answer=state.final_answer, state=state.model_dump(mode="json"))
                             return
                         fused = next((row for row in subgroup.data if str(row["structure_type"]).lower() == "fused_ring"), None)
                         if fused:
