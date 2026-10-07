@@ -1015,6 +1015,34 @@ class ScientificAgent:
                     if not result.success:
                         decision = classify_failure(result.error or "file tool failed", tool=selected_choice.tool)
                         if decision.action == "alternative_tool":
+                            recovery_step, original_plan = self._append_recovery_step(
+                                state,
+                                goal="检查实际文件列结构并解释原工具失败原因",
+                                capability=Capability.FILE,
+                                tool="inspect_table",
+                                observation={
+                                    "failed_tool": selected_choice.tool,
+                                    "failure_kind": decision.failure_kind,
+                                    "error": result.error,
+                                },
+                            )
+                            if recovery_step:
+                                yield event(
+                                    "PLAN_REVISED",
+                                    "根据文件工具失败观察调整计划",
+                                    original_plan=original_plan,
+                                    observation=result.model_dump(),
+                                    replan_reason=decision.reason[:500],
+                                    revised_plan=[step.model_dump(mode="json") for step in state.plan],
+                                    plan_version=state.plan_version,
+                                )
+                                self._start_plan_step(state, recovery_step.step_id)
+                                yield event(
+                                    "PLAN_STEP_STARTED",
+                                    "开始文件恢复步骤",
+                                    step_id=recovery_step.step_id,
+                                    status="running",
+                                )
                             path = self._file_path(user_id, thread_id, names[0])
                             fallback = self.files.inspect_table(path)
                             fallback_call = self._record_tool(state, "inspect_table", fallback)
@@ -1045,6 +1073,15 @@ class ScientificAgent:
                                     self._file_dataset_version(path),
                                 )
                                 yield event("EVIDENCE_ADDED", "已保存文件结构证据", evidence=evidence.model_dump())
+                                if recovery_step:
+                                    recovery_step.evidence_ids.append(evidence.evidence_id)
+                                    self._finish_plan_step(recovery_step, "已检查真实文件列结构")
+                                    yield event(
+                                        "PLAN_STEP_FINISHED",
+                                        "文件恢复步骤完成",
+                                        step_id=recovery_step.step_id,
+                                        status="completed",
+                                    )
                                 state.uncertainties.append(
                                     f"原工具 {selected_choice.tool} 无法完成：{result.error}"
                                 )
@@ -1253,6 +1290,34 @@ class ScientificAgent:
                         if not subgroup.success:
                             decision = classify_failure(subgroup.error or "group analysis failed", tool="group_metrics")
                             if decision.action == "alternative_tool":
+                                recovery_step, original_plan = self._append_recovery_step(
+                                    state,
+                                    goal="检查子群分析失败后的真实列结构",
+                                    capability=Capability.FILE,
+                                    tool="inspect_table",
+                                    observation={
+                                        "failed_tool": "group_metrics",
+                                        "failure_kind": decision.failure_kind,
+                                        "error": subgroup.error,
+                                    },
+                                )
+                                if recovery_step:
+                                    yield event(
+                                        "PLAN_REVISED",
+                                        "根据子群分析失败观察调整计划",
+                                        original_plan=original_plan,
+                                        observation=subgroup.model_dump(),
+                                        replan_reason=decision.reason[:500],
+                                        revised_plan=[step.model_dump(mode="json") for step in state.plan],
+                                        plan_version=state.plan_version,
+                                    )
+                                    self._start_plan_step(state, recovery_step.step_id)
+                                    yield event(
+                                        "PLAN_STEP_STARTED",
+                                        "开始子群恢复步骤",
+                                        step_id=recovery_step.step_id,
+                                        status="running",
+                                    )
                                 fallback = self.files.inspect_table(target_path)
                                 fallback_call = self._record_tool(state, "inspect_table", fallback)
                                 subgroup.metadata["recovered"] = fallback.success
@@ -1277,6 +1342,15 @@ class ScientificAgent:
                                         self._file_dataset_version(target_path),
                                     )
                                     yield event("EVIDENCE_ADDED", "已保存文件结构证据", evidence=evidence.model_dump())
+                                    if recovery_step:
+                                        recovery_step.evidence_ids.append(evidence.evidence_id)
+                                        self._finish_plan_step(recovery_step, "已检查真实文件列结构")
+                                        yield event(
+                                            "PLAN_STEP_FINISHED",
+                                            "子群恢复步骤完成",
+                                            step_id=recovery_step.step_id,
+                                            status="completed",
+                                        )
                                     state.uncertainties.append(f"无法完成结构子群分析：{subgroup.error}")
                             if subgroup_step:
                                 subgroup_step.status = "failed"
