@@ -359,11 +359,19 @@ async function showTask(taskId) {
 }
 
 async function initialize() {
-  await refreshConversations()
-  const pathId = location.pathname.match(/^\/c\/([^/]+)$/)?.[1]
-  const target = pathId && conversations.value.some(item => item.id === pathId) ? pathId : conversations.value[0]?.id
-  if (target) await loadConversation(target, !pathId)
-  else await newTask()
+  try {
+    await refreshConversations()
+    const pathId = location.pathname.match(/^\/c\/([^/]+)$/)?.[1]
+    const target = pathId && conversations.value.some(item => item.id === pathId) ? pathId : conversations.value[0]?.id
+    if (target) await loadConversation(target, !pathId)
+    else await newTask()
+  } catch (error) {
+    readiness.value = { status: 'unavailable', ready: false, components: {} }
+    conversations.value = []
+    messages.value = []
+    events.value = []
+    trace.value = emptyTrace()
+  }
 }
 
 function onPopState() {
