@@ -18,6 +18,7 @@ from app.models.schemas import (
     SSEEvent,
 )
 from app.services.conversation_history import ActiveTaskConflict, ConversationNotFound, conversation_repository
+from app.services.conversation_policy import conversation_policy
 from app.services.followup import (
     REUSE_TYPES,
     ConversationContextResolver,
@@ -194,6 +195,83 @@ async def conversation_chat_stream(
     require_conversation(repository, conversation_id, user_id)
     recent_contexts = repository.recent_analysis_contexts(conversation_id, user_id)
     latest_context = recent_contexts[0] if recent_contexts else None
+    active_task = repository.active_task(conversation_id)
+    resource_summary = resources.discover(user_id, request.thread_id)
+    interaction = await conversation_policy.resolve_async(
+        request.query,
+        has_context=bool(recent_contexts),
+        active_task=active_task is not None,
+        resources=resource_summary,
+    )
+
+    if interaction.interaction_type == "CANCEL_ACTIVE":
+        if active_task is None:
+            async def nothing_to_cancel():
+                yield encode_sse(SSEEvent(
+                    event="FINAL_ANSWER",
+                    message="当前没有运行中的任务",
+                    data={"answer": "当前会话没有正在执行或等待补充信息的任务。", "new_tool_calls": 0},
+                ))
+            return StreamingResponse(nothing_to_cancel(), media_type="text/event-stream")
+        repository.add_message(conversation_id, "user", request.query, active_task["id"])
+        after_id = repository.latest_event_id(active_task["id"])
+        if not repository.cancel_waiting_task(active_task["id"], conversation_id):
+            raise HTTPException(status_code=409, detail="task is not active or was already cancelled/completed")
+        worker = running_tasks.get(active_task["id"])
+        if worker is not None:
+            worker.cancel()
+        return StreamingResponse(
+            replay_task_events(repository, conversation_id, active_task["id"], after_id),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    if interaction.interaction_type != "DELEGATE":
+        repository.set_first_query_title(conversation_id, request.query)
+        try:
+            task_id = repository.start_task(conversation_id, request.thread_id)
+        except ActiveTaskConflict as exc:
+            raise HTTPException(status_code=409, detail="conversation already has an active task") from exc
+        repository.add_message(conversation_id, "user", request.query, task_id)
+        repository.update_task(task_id, intent={
+            "interaction_type": interaction.interaction_type,
+            "interaction_source": interaction.source,
+            "interaction_reason": interaction.reason,
+            "requires_scientific_execution": False,
+        })
+        answer = interaction.direct_answer or "请把问题或希望执行的科研任务描述得更具体一些。"
+
+        async def direct_worker():
+            repository.add_event(task_id, "INTERACTION_RESOLVED", {
+                "message": "已判断本轮无需执行科研工具",
+                "task_id": task_id,
+                "interaction_type": interaction.interaction_type,
+                "source": interaction.source,
+                "reason": interaction.reason,
+                "new_tool_calls": 0,
+            })
+            repository.finish_task_with_answer(
+                task_id,
+                conversation_id,
+                answer,
+                {
+                    "message": "直接回答完成",
+                    "answer": answer,
+                    "task_id": task_id,
+                    "interaction_type": interaction.interaction_type,
+                    "new_tool_calls": 0,
+                },
+            )
+            if False:
+                yield None
+
+        start_background_task(task_id, repository, direct_worker())
+        return StreamingResponse(
+            replay_task_events(repository, conversation_id, task_id),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     follow_up = await followup_resolver.resolve_async(request.query, latest_context, recent_contexts)
     previous_context = next(
         (item for item in recent_contexts if item["task"]["id"] == follow_up.target_task_id),
