@@ -189,9 +189,9 @@ class ScientificAgent:
         """Preserve the complete SQL result and derive fused-ring coverage without assuming one schema."""
         rows = [dict(row) for row in result.data if isinstance(row, dict)] if isinstance(result.data, list) else []
         if not rows:
-            state.uncertainties.append(
-                "只读 SQL 查询返回 0 rows；空结果不能解释为科学对象不存在，也不能支撑确定性结论。"
-            )
+            message = "只读 SQL 查询返回 0 rows；空结果不等价于科学上不存在，也不能支撑确定性结论。"
+            state.uncertainties.append(message)
+            state.quality_issues.append(message)
             return []
         has_error_metric = any(
             any("error" in str(key).lower() or "mae" in str(key).lower() or "rmse" in str(key).lower() for key in row)
@@ -216,16 +216,18 @@ class ScientificAgent:
         )
         if fused_row is None:
             if "fused" in state.goal.lower():
-                state.uncertainties.append(
-                    "查询返回的行中没有 fused_ring 分组，不能据此把 fused_ring 覆盖数推断为 0。"
-                )
+                message = "查询返回的行中没有 fused_ring 分组，不能据此把 fused_ring 覆盖数推断为 0。"
+                state.uncertainties.append(message)
+                state.quality_issues.append(message)
             return [details]
         fused_count = fused_row.get(
             "sample_count",
             fused_row.get("train_molecule_count", fused_row.get("molecule_count")),
         )
         if fused_count is None:
-            state.uncertainties.append("fused_ring 分组缺少样本数/训练覆盖字段。")
+            message = "fused_ring 分组缺少样本数/训练覆盖字段。"
+            state.uncertainties.append(message)
+            state.quality_issues.append(message)
             return [details]
         coverage = self._add_evidence(
             state,
@@ -257,7 +259,9 @@ class ScientificAgent:
         versions = parse_versions(state.goal)
         selected = datasource_id or "training_db"
         if not versions:
-            state.uncertainties.append("比较数据集版本需要明确两个不同的 train_vN 版本")
+            message = "比较数据集版本需要明确两个不同的 train_vN 版本"
+            state.uncertainties.append(message)
+            state.quality_issues.append(message)
             state.final_answer = self._finalize(state)
             yield event("FINAL_ANSWER", "缺少版本", answer=state.final_answer, state=state.model_dump(mode="json"))
             return
@@ -319,6 +323,7 @@ class ScientificAgent:
             yield event("EVIDENCE_ADDED", "已保存原始版本计数", evidence=raw.model_dump())
             comparison, issues = compare_rows(rows, versions)
             state.uncertainties.extend(issues)
+            state.quality_issues.extend(issues)
             if comparison:
                 derived = self._add_evidence(
                     state, "两个数据集版本的结构类型计数差", comparison, "database", selected,
@@ -326,7 +331,9 @@ class ScientificAgent:
                 )
                 yield event("EVIDENCE_ADDED", "已计算结构类型计数差", evidence=derived.model_dump())
         if any(word in state.goal for word in ("数据质量", "缺失率", "重复率", "预测", "误差", "OOD", "分布漂移")):
-            state.uncertainties.append("当前结构计数查询不足以回答数据质量、预测表现或分布漂移问题")
+            message = "当前结构计数查询不足以回答数据质量、预测表现或分布漂移问题"
+            state.uncertainties.append(message)
+            state.quality_issues.append(message)
         state.final_answer = self._finalize(state)
         yield event("FINAL_ANSWER", "数据集比较完成", answer=state.final_answer, state=state.model_dump(mode="json"))
 
@@ -1530,7 +1537,7 @@ class ScientificAgent:
 
     @staticmethod
     def _evidence_quality_issues(state: ScientificAgentState) -> list[str]:
-        issues: list[str] = []
+        issues: list[str] = list(state.quality_issues)
         for result in state.observations:
             if not result.success and not result.metadata.get("recovered"):
                 issues.append(f"工具执行失败：{result.error or result.source}")
