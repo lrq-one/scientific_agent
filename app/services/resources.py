@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from app.config import DEMO_DATA
+import os
+
+from app.config import DEMO_DATA, ENABLE_DEMO_DATA
 from app.models.schemas import ResourceSummary
 from app.services.workspace import WorkspaceService
 from app.services.object_storage import ObjectStorageService
@@ -16,9 +18,9 @@ class ResourceService:
     def discover(self, user_id: str, thread_id: str) -> ResourceSummary:
         files = self.workspace.list_files(user_id, thread_id)
         files += self.storage.list_files(user_id, thread_id)
-        demo_files = sorted(path.name for path in DEMO_DATA.glob("model_*.csv"))
+        demo_files = sorted(path.name for path in DEMO_DATA.glob("model_*.csv")) if ENABLE_DEMO_DATA else []
         files = sorted(set(files + demo_files))
-        datasources = ["training_db"] if user_id else []
+        datasources = ["training_db"] if user_id and os.getenv("DATABASE_URL") else []
         # MODEL_PATH alone is not a verified inference capability: predict_rt
         # currently has no checkpoint loader or preprocessing adapter.
         models: list[str] = []
