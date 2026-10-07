@@ -24,6 +24,7 @@ from app.services.recovery import bounded_transient_retry, classify_failure
 from app.tools.database_tools import DatabaseService
 from app.tools.file_tools import FileAnalysisService
 from app.tools.registry import ToolRegistry
+from app.tools.dispatcher import ToolDispatcher, ToolExecutionContext
 
 
 def event(name: str, message: str, **data) -> SSEEvent:
@@ -50,10 +51,28 @@ class ScientificAgent:
         self.mcp = ScientificMCPClient()
         self.artifact_service = ArtifactService(self.storage)
         self.tool_registry = ToolRegistry(skills=self.skills)
+        self.tool_dispatcher = ToolDispatcher(
+            workspace=self.workspace,
+            storage=self.storage,
+            files=self.files,
+            mcp=self.mcp,
+            artifacts=self.artifact_service,
+        )
         self.pending: dict[str, dict] = {}
         self.checkpointing = checkpoint_service
         self.planning_graph = build_planning_graph(self.checkpointing.checkpointer)
         self.deep_runtime = DeepAgentRuntime(self.checkpointing, self.workspace)
+
+    @staticmethod
+    def _preferred_file_tool(query: str) -> str:
+        text = query.lower()
+        if any(word in text for word in ("高误差", "最大误差", "top error", "highest error")):
+            return "find_high_error_samples"
+        if any(word in text for word in ("缺失", "重复", "质量", "missing", "duplicate", "profile")):
+            return "profile_dataset"
+        if any(word in text for word in ("mae", "rmse", "指标", "预测误差", "模型误差")):
+            return "calculate_metrics"
+        return "inspect_table"
 
     @staticmethod
     def _start_plan_step(state: ScientificAgentState, step_id: str) -> PlanStep:
