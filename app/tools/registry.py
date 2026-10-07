@@ -137,6 +137,7 @@ class ToolRegistry:
         current_step: str,
         candidates: list[ToolSpec],
         preferred_tool: str | None = None,
+        argument_context: dict[str, Any] | None = None,
     ) -> tuple[ToolChoice | None, str, dict[str, Any]]:
         if not candidates:
             return None, "no_authorized_candidate", {"llm_called": False}
@@ -158,6 +159,8 @@ class ToolRegistry:
                 "Choose exactly one tool from the already authorized candidate schemas. "
                 "Do not invent a tool or arguments.\n"
                 f"Goal: {goal}\nCurrent step: {current_step}\n"
+                f"Known argument context (trusted values; use when relevant): "
+                f"{json.dumps(argument_context or {}, ensure_ascii=False)}\n"
                 f"Candidates: {json.dumps([item.model_dump() for item in candidates], ensure_ascii=False)}"
             )
             started = perf_counter()
