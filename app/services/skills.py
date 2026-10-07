@@ -169,5 +169,25 @@ class SkillService:
             **collector.snapshot(),
         }
 
+    def execution_context(self, selected_skills: list[str], max_chars_per_skill: int = 1200) -> str:
+        """Return bounded executable Skill guidance for downstream planners/tools."""
+        catalog = self.by_name()
+        blocks: list[str] = []
+        for name in selected_skills[:3]:
+            skill = catalog.get(name)
+            if not skill:
+                continue
+            blocks.append(
+                "\n".join(
+                    [
+                        f"Skill: {name}",
+                        f"Description: {skill.get('description', '')}",
+                        f"Allowed tools: {', '.join(skill.get('allowed_tools', []))}",
+                        str(skill.get("instructions", ""))[:max_chars_per_skill],
+                    ]
+                )
+            )
+        return "\n\n".join(blocks)
+
     def by_name(self) -> dict[str, dict]:
         return {skill["name"]: skill for skill in self.load()}
