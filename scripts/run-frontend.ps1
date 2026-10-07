@@ -8,8 +8,8 @@ $FrontendErr = Join-Path $RuntimeDir "frontend.err.log"
 Set-Location $WebRoot
 
 try {
-    & npm.cmd run dev -- --host 127.0.0.1 1>> $FrontendOut 2>> $FrontendErr
-    exit $LASTEXITCODE
+    $Process = Start-Process -FilePath "npm.cmd" -ArgumentList @("run", "dev", "--", "--host", "127.0.0.1") -WorkingDirectory $WebRoot -RedirectStandardOutput $FrontendOut -RedirectStandardError $FrontendErr -NoNewWindow -Wait -PassThru
+    exit $Process.ExitCode
 }
 catch {
     $_ | Out-String | Add-Content -Path $FrontendErr
