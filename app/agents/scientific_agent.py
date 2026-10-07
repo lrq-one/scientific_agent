@@ -847,8 +847,13 @@ class ScientificAgent:
                 else:
                     await asyncio.sleep(0)
                     model_results = {}
-                    comparison_step = self._start_plan_step(state, "file-comparison") if intent.task_type == "mixed_analysis" else None
-                    yield event("PLAN_STEP_STARTED", "开始执行计划步骤", step_id="file-comparison", status="running")
+                    comparison_step = (
+                        self._start_plan_step(state, "file-comparison")
+                        if any(step.step_id == "file-comparison" for step in state.plan)
+                        else None
+                    )
+                    if comparison_step:
+                        yield event("PLAN_STEP_STARTED", "开始执行计划步骤", step_id="file-comparison", status="running")
                     for name in names[:2]:
                         path = self._file_path(user_id, thread_id, name)
                         yield event("TOOL_STARTED", "正在计算指标", tool="calculate_metrics", source=name)
@@ -931,14 +936,19 @@ class ScientificAgent:
                         state.artifacts.append(table["object_key"])
                         yield event("ARTIFACT_CREATED", "已保存模型指标表", artifact=table)
 
-                    if intent.task_type == "mixed_analysis":
+                    if comparison_step:
                         self._finish_plan_step(comparison_step, f"已比较 {len(model_results)} 个模型文件")
                         yield event("PLAN_STEP_FINISHED", "计划步骤完成", step_id="file-comparison", status="completed")
 
                     target_name = names[1] if len(names) > 1 else names[0]
                     target_path = self._file_path(user_id, thread_id, target_name)
-                    subgroup_step = self._start_plan_step(state, "subgroup-analysis") if intent.task_type == "mixed_analysis" else None
-                    yield event("PLAN_STEP_STARTED", "开始执行计划步骤", step_id="subgroup-analysis", status="running")
+                    subgroup_step = (
+                        self._start_plan_step(state, "subgroup-analysis")
+                        if any(step.step_id == "subgroup-analysis" for step in state.plan)
+                        else None
+                    )
+                    if subgroup_step:
+                        yield event("PLAN_STEP_STARTED", "开始执行计划步骤", step_id="subgroup-analysis", status="running")
                     yield event("TOOL_STARTED", "正在分析结构子群", tool="group_metrics", source=target_name)
                     subgroup = self.files.group_metrics(target_path)
                     call_id = self._record_tool(state, "group_metrics", subgroup)
@@ -1018,9 +1028,9 @@ class ScientificAgent:
                                     alternative_tool="group_metrics" if decision.action == "alternative_tool" else None,
                                     reason=decision.reason[:500],
                                 )
-                    if intent.task_type == "mixed_analysis":
+                    if subgroup_step:
                         self._finish_plan_step(subgroup_step, "已完成 structure_type 子群误差计算")
-                        state.current_step = 2
+                        state.current_step += 1
                         yield event("PLAN_STEP_FINISHED", "计划步骤完成", step_id="subgroup-analysis", status="completed")
 
             if intent.task_type in {"database_analysis", "mixed_analysis"}:
