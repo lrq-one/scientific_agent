@@ -82,10 +82,16 @@ class SchemaRetriever:
             for table, score in ranked
         ]
 
-    def retrieve(self, goal: str, schema: dict[str, list[dict[str, Any]]], limit: int = 3) -> dict[str, list[dict[str, Any]]]:
+    def retrieve(
+        self,
+        goal: str,
+        schema: dict[str, list[dict[str, Any]]],
+        limit: int | None = None,
+    ) -> dict[str, list[dict[str, Any]]]:
         if not schema:
             return {}
-        hits = SchemaRetriever(top_k=limit).search(goal, schema)
+        effective_limit = limit or self.top_k
+        hits = SchemaRetriever(top_k=effective_limit).search(goal, schema)
         selected = [hit["table"] for hit in hits if hit["score"] > 0]
         if not selected:
             selected = ["training_molecules"] if "training_molecules" in schema else list(schema)[:limit]
@@ -122,6 +128,7 @@ class TextToSQLService:
         relationships: list[dict[str, str]],
         dataset_version: str | None = None,
         repair_feedback: str | None = None,
+        skill_context: str | None = None,
     ) -> str:
         dataset_constraint = ""
         if dataset_version:
@@ -135,9 +142,14 @@ class TextToSQLService:
             "Use only columns and aliases present in the supplied schema; return a corrected query.\n"
             if repair_feedback else ""
         )
+        skill_constraint = (
+            f"Selected scientific Skill guidance (follow it unless it conflicts with security/schema):\n{skill_context[:4000]}\n"
+            if skill_context else ""
+        )
         return (
             "Generate one parameterized PostgreSQL read-only query as SQLCandidate.\n"
             f"Goal: {goal}\nCurrent step: {current_step}\nDatasource: {datasource}\n"
+            f"{skill_constraint}"
             f"{dataset_constraint}"
             f"{repair_constraint}"
             f"Relevant schema: {json.dumps(schema, ensure_ascii=False)}\n"
@@ -155,6 +167,7 @@ class TextToSQLService:
         relationships: list[dict[str, str]],
         dataset_version: str | None = None,
         repair_feedback: str | None = None,
+        skill_context: str | None = None,
     ) -> tuple[SQLCandidate, dict[str, Any]]:
         relevant = self.retriever.retrieve(goal, full_schema)
         related_names = set(relevant)
@@ -170,7 +183,16 @@ class TextToSQLService:
             started = perf_counter()
             try:
                 candidate = await llm.with_structured_output(SQLCandidate).ainvoke(
-                    self.prompt(goal, current_step, datasource, relevant, relationships, dataset_version, repair_feedback),
+                    self.prompt(
+                        goal,
+                        current_step,
+                        datasource,
+                        relevant,
+                        relationships,
+                        dataset_version,
+                        repair_feedback,
+                        skill_context,
+                    ),
                     config={"callbacks": [collector]},
                 )
                 metadata = {
