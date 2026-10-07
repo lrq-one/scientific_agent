@@ -12,7 +12,7 @@ FILE_WORDS = ("csv", "excel", "xlsx", "文件", "表格", "model_v1", "model_v2"
 DB_WORDS = ("数据库", "database", "training_db", "训练覆盖", "训练数据", "覆盖情况", "coverage", "样本覆盖", "数据集")
 MODEL_WORDS = ("predict_rt", "预测 rt", "预测保留时间")
 COMPLEX_WORDS = ("比较", "分析为什么", "并检查", "以及", "综合", "compare", "why")
-MCP_WORDS = ("smiles", "分子特征", "molecule features", "fused-ring", "fused_ring")
+MCP_WORDS = ("smiles", "分子特征", "molecule features", "molecule_id", "分子 id", "分子id")
 
 
 class RequestRouter:
@@ -30,7 +30,9 @@ class RequestRouter:
         mentions_file = any(word in text for word in FILE_WORDS)
         mentions_db = any(word in text for word in DB_WORDS)
         mentions_model = any(word in text for word in MODEL_WORDS)
-        mentions_mcp = any(word in text for word in MCP_WORDS)
+        mentions_mcp = any(word in text for word in MCP_WORDS) or bool(
+            re.search(r"\b(?:molecule\s*)?(?:M|T)\d{3,}\b", query, flags=re.I)
+        )
 
         required: list[Capability] = []
         if mentions_file and resources.available_files:
