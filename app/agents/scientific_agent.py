@@ -467,6 +467,7 @@ class ScientificAgent:
             (name for name in state.selected_skills if name != "scientific_result_summary"),
             None,
         )
+        skill_context = self.skills.execution_context(state.selected_skills)
         sql_current_step = (
             "training-coverage"
             if intent.task_type == "mixed_analysis"
@@ -479,6 +480,7 @@ class ScientificAgent:
             full_schema=sql_schema,
             relationships=sql_relationships,
             dataset_version=dataset_version,
+            skill_context=skill_context,
         ))
         generation_result = ToolResult(
             success=True,
@@ -536,6 +538,7 @@ class ScientificAgent:
                 goal=sql_goal, current_step="sql-repair", datasource=selected,
                 full_schema=sql_schema, relationships=sql_relationships,
                 dataset_version=dataset_version, repair_feedback=str(exc),
+                skill_context=skill_context,
             ))
             if (candidate.sql, tuple(sorted(candidate.params.items()))) == previous_sql:
                 revised_step.status = "failed"
