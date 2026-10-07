@@ -37,7 +37,12 @@ def check_checkpoint(checkpointing) -> dict[str, Any]:
     try:
         connection = checkpointing.connection
         if connection is not None:
-            value = connection.execute("SELECT 1").fetchone()[0]
+            row = connection.execute("SELECT 1 AS ok").fetchone()
+            if row is None:
+                return _component("unavailable", ready=False, detail="checkpoint database ping returned no row")
+            # CheckpointService uses psycopg dict_row, so fetchone() returns a
+            # mapping rather than a positional tuple.
+            value = row.get("ok") if isinstance(row, dict) else row[0]
             if value != 1:
                 return _component("unavailable", ready=False, detail="checkpoint database ping failed")
         return _component("ok", ready=True)
