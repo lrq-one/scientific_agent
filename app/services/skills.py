@@ -53,6 +53,8 @@ class SkillService:
         goal_lower = goal.lower()
         scored = []
         for skill in self.load():
+            if skill.get("name") == "scientific_result_summary":
+                continue
             if skill.get("requires_two_dataset_versions"):
                 versions = set(re.findall(r"train[_-]?v\d+", goal_lower))
                 if len(versions) != 2 or not any(word in goal_lower for word in ("比较", "对比", "compare")):
@@ -115,6 +117,8 @@ class SkillService:
         available = available_capabilities or set()
         candidates = []
         for skill in catalog:
+            if skill.get("name") == "scientific_result_summary":
+                continue
             required = {str(item) for item in skill.get("required_capabilities", [])}
             if required and available and not required.issubset(available):
                 continue
@@ -174,6 +178,8 @@ class SkillService:
         catalog = self.by_name()
         blocks: list[str] = []
         for name in selected_skills[:3]:
+            if name == "scientific_result_summary":
+                continue
             skill = catalog.get(name)
             if not skill:
                 continue
