@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import base64
+import math
 from pathlib import Path
 from typing import Any
 
@@ -129,6 +131,42 @@ class ToolDispatcher:
                 return database.preview_table(str(args["table"]), int(args.get("limit") or 20))
             return database.execute(str(args["sql"]), dict(args.get("params") or {}))
 
+        if name == "compare_structure_groups":
+            rows = list(args["rows"])
+            group = str(args["group"])
+            grouped: dict[str, list[float]] = {}
+            for row in rows:
+                if not isinstance(row, dict) or group not in row:
+                    continue
+                error = row.get("absolute_error")
+                if error is None and row.get("observed_rt") is not None and row.get("predicted_rt") is not None:
+                    error = abs(float(row["predicted_rt"]) - float(row["observed_rt"]))
+                if error is None:
+                    continue
+                value = float(error)
+                if math.isfinite(value):
+                    grouped.setdefault(str(row[group]), []).append(value)
+            if not grouped:
+                return ToolResult(
+                    success=False,
+                    source="compare_structure_groups",
+                    error="no rows contained both the requested group and an error value",
+                )
+            summary = [
+                {
+                    group: label,
+                    "sample_count": len(values),
+                    "mae": sum(values) / len(values),
+                }
+                for label, values in sorted(grouped.items())
+            ]
+            return ToolResult(
+                success=True,
+                data=summary,
+                source="compare_structure_groups",
+                metadata={"deterministic": True},
+            )
+
         if name == "get_molecule_features":
             return await self.mcp.call("get_molecule_features", {"molecule_id": str(args["molecule_id"])})
 
@@ -156,6 +194,24 @@ class ToolDispatcher:
                 context.user_id,
                 context.thread_id,
                 dict(args["metrics"]),
+            )
+            return ToolResult(success=True, data=artifact, source=artifact["object_key"])
+
+        if name == "save_chart":
+            if not self.storage.configured:
+                return ToolResult(success=False, source="artifact", error="object_storage_unavailable")
+            try:
+                content = base64.b64decode(str(args["image_base64"]), validate=True)
+            except Exception:
+                return ToolResult(success=False, source="artifact", error="invalid_base64_png")
+            if not content.startswith(b"\x89PNG\r\n\x1a\n"):
+                return ToolResult(success=False, source="artifact", error="chart_content_is_not_png")
+            filename = str(args["filename"])
+            artifact = self.artifacts.save_chart(
+                context.user_id,
+                context.thread_id,
+                content,
+                filename,
             )
             return ToolResult(success=True, data=artifact, source=artifact["object_key"])
 
