@@ -855,6 +855,14 @@ class ScientificAgent:
                         molecule_id = str(runtime_call.get("molecule_id") or molecule_match.group(1)).upper()
                         deep_mcp_results[molecule_id] = mcp_result
                         mcp_call_id = self._record_tool(state, "mcp:get_molecule_features", mcp_result)
+                        yield event(
+                            "TOOL_FINISHED",
+                            "DeepAgents 子工具执行完成",
+                            tool="mcp:get_molecule_features",
+                            molecule_id=molecule_id,
+                            result=mcp_result.model_dump(),
+                            parent_tool="deepagents_runtime",
+                        )
                         if mcp_result.success:
                             payload = (
                                 mcp_result.data.get("result", mcp_result.data)
