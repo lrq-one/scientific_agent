@@ -100,6 +100,7 @@ class ScientificAgentState(BaseModel):
     evidence: list[Evidence] = Field(default_factory=list)
     claims: list[GroundedClaim] = Field(default_factory=list)
     uncertainties: list[str] = Field(default_factory=list)
+    blocking_issues: list[str] = Field(default_factory=list)
     quality_status: str | None = None
     quality_issues: list[str] = Field(default_factory=list)
     final_answer: str | None = None
