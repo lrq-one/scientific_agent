@@ -94,7 +94,7 @@ class DeepAgentRuntime:
             )
         return DeterministicRuntimeModel()
 
-    async def run_scaffold(
+    async def run_bounded_subtask(
         self,
         goal: str,
         user_id: str,
@@ -137,8 +137,8 @@ class DeepAgentRuntime:
             model=self._model(),
             tools=[register_runtime_context, get_molecule_features],
             system_prompt=(
-                "You are the high-level runtime scaffold for a scientific analysis agent. "
-                "Use registered tools and loaded skills, but do not fabricate evidence or expose chain-of-thought."
+                "You are the bounded DeepAgents sub-agent for a scientific analysis agent. "
+                "Execute only the bounded sub-task with registered tools and loaded skills. Do not fabricate evidence or expose chain-of-thought."
             ),
             skills=skill_paths,
             backend=backend,
@@ -153,6 +153,7 @@ class DeepAgentRuntime:
         final_message = result["messages"][-1]
         return {
             "runtime": "deepagents.create_deep_agent",
+            "role": "bounded_subagent",
             "tools": [register_runtime_context.name, get_molecule_features.name],
             "skills": selected_skills,
             "skill_paths": skill_paths,
@@ -165,3 +166,14 @@ class DeepAgentRuntime:
             "model_mode": "real_llm_opt_in" if llm_settings().configured and os.getenv("DEEP_RUNTIME_LLM") == "1" else "deterministic_bounded_runtime",
         }
 
+
+
+    async def run_scaffold(
+        self,
+        goal: str,
+        user_id: str,
+        thread_id: str,
+        selected_skills: list[str],
+    ) -> dict[str, Any]:
+        """Backward-compatible alias; use run_bounded_subtask in product code."""
+        return await self.run_bounded_subtask(goal, user_id, thread_id, selected_skills)
