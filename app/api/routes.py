@@ -613,10 +613,18 @@ async def resume_agent(request: ResumeRequest, user_id: str = Depends(current_us
                 repository.add_message(request.conversation_id, "error", str(exc), request.task_id)
             yield encode_sse(SSEEvent(event="ERROR", message="恢复任务失败", data={"error": str(exc), "task_id": request.task_id}))
     if repository is not None:
+        # Capture the cursor before the resumed worker can persist new events;
+        # otherwise a fast worker could finish before latest_event_id() is read
+        # and the client would skip the resume/final events entirely.
+        resume_after_id = repository.latest_event_id(request.task_id)
         start_background_task(request.task_id, repository, generate())
         return StreamingResponse(
-            replay_task_events(repository, request.conversation_id, request.task_id,
-                               after_id=repository.latest_event_id(request.task_id)),
+            replay_task_events(
+                repository,
+                request.conversation_id,
+                request.task_id,
+                after_id=resume_after_id,
+            ),
             media_type="text/event-stream",
         )
     return StreamingResponse(generate(), media_type="text/event-stream")
