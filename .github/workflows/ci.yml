@@ -1,9 +1,6 @@
 name: CI Diagnostic
 
 on:
-  push:
-    branches:
-      - chatgpt/agent-completion-v2
   workflow_dispatch:
 
 jobs:
