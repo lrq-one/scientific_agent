@@ -15,7 +15,7 @@ from app.agents.deep_runtime import DeepAgentRuntime
 from app.models.schemas import Capability, Evidence, GroundedClaim, PlanStep, RequestIntent, ResourceSummary, SSEEvent, ScientificAgentState, ToolResult
 from app.services.resources import ResourceService
 from app.services.skills import SkillService
-from app.services.text2sql import TextToSQLService
+from app.services.text2sql import SchemaRetriever, TextToSQLService
 from app.services.mcp_client import ScientificMCPClient
 from app.services.object_storage import ObjectStorageService
 from app.services.workspace import WorkspaceService
@@ -50,6 +50,7 @@ class ScientificAgent:
         self.skills = SkillService()
         self.files = FileAnalysisService()
         self.text2sql = TextToSQLService()
+        self.schema_retriever = SchemaRetriever(top_k=5)
         self.mcp = ScientificMCPClient()
         self.artifact_service = ArtifactService(self.storage)
         self.tool_registry = ToolRegistry(skills=self.skills)
@@ -425,7 +426,7 @@ class ScientificAgent:
                 )
             else:
                 raw_schema = await bounded_transient_retry(lambda: asyncio.to_thread(database.schema))
-                hits = self.text2sql.retriever.search(query, raw_schema.data, [])
+                hits = self.schema_retriever.search(query, raw_schema.data, [])
                 schema_hits = ToolResult(
                     success=True,
                     data=hits,
@@ -901,10 +902,15 @@ class ScientificAgent:
                         yield event("FINAL_ANSWER", "分析未完成", answer=state.final_answer, state=state.model_dump(mode="json"))
                         return
                     path = self._file_path(user_id, thread_id, names[0])
+                    evidence_value = (
+                        result.data.get("row_count")
+                        if selected_choice.tool == "inspect_table" and isinstance(result.data, dict)
+                        else result.data
+                    )
                     evidence = self._add_evidence(
                         state,
                         f"{names[0]} · {selected_choice.tool} 结果",
-                        result.data,
+                        evidence_value,
                         "file",
                         names[0],
                         call_id,
@@ -1336,7 +1342,7 @@ class ScientificAgent:
                 *[f"- {issue}" for issue in quality_issues],
             ]
             if any("0 rows" in issue for issue in quality_issues):
-                lines.append("- 0 rows 只表示本次查询在当前范围内没有返回记录，不等价于科学对象不存在。")
+                lines.append("- 0 rows 只表示本次查询在当前范围内没有返回记录，不等价于科学上不存在。")
             if state.evidence:
                 lines += ["", "**已经获得但不足以单独支撑结论的证据**"]
                 for item in state.evidence[:6]:

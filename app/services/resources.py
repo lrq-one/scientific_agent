@@ -20,7 +20,7 @@ class ResourceService:
         files += self.storage.list_files(user_id, thread_id)
         demo_files = sorted(path.name for path in DEMO_DATA.glob("model_*.csv")) if ENABLE_DEMO_DATA else []
         files = sorted(set(files + demo_files))
-        datasources = ["training_db"] if user_id and os.getenv("DATABASE_URL") else []
+        datasources = ["training_db"] if user_id and (os.getenv("DATABASE_URL") or ENABLE_DEMO_DATA) else []
         # MODEL_PATH alone is not a verified inference capability: predict_rt
         # currently has no checkpoint loader or preprocessing adapter.
         models: list[str] = []

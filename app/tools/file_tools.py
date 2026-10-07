@@ -27,7 +27,8 @@ class FileAnalysisService:
             data={
                 "columns": list(frame.columns),
                 "types": {name: str(dtype) for name, dtype in frame.dtypes.items()},
-                "rows": len(frame),
+                "rows": int(len(frame)),
+                "row_count": int(len(frame)),
             },
             source=str(path),
         )

@@ -28,7 +28,14 @@ class WorkspaceService:
         return path
 
     def safe_file(self, user_id: str, thread_id: str, filename: str, create_workspace: bool = False) -> Path:
-        if Path(filename).name != filename or filename in {"", ".", ".."}:
+        # pathlib on POSIX does not treat backslash as a separator, so reject
+        # both separator styles explicitly before resolving the target.
+        if (
+            Path(filename).name != filename
+            or filename in {"", ".", ".."}
+            or "/" in filename
+            or "\\" in filename
+        ):
             raise WorkspaceError("path traversal rejected")
         workspace = self.path_for(user_id, thread_id, create=create_workspace)
         target = (workspace / filename).resolve()

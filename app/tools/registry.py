@@ -205,7 +205,12 @@ class ToolRegistry:
         )
         valid, error = self.validate_choice(fallback_choice)
         if not valid:
-            return None, "unbound_arguments", {**telemetry, "binding_error": error}
+            source = (
+                "llm_invalid_or_unauthorized_arguments"
+                if telemetry.get("invalid_choice") is not None
+                else "unbound_arguments"
+            )
+            return None, source, {**telemetry, "binding_error": error}
         return fallback_choice, "deterministic_fallback", telemetry
 
     def routing_trace(
