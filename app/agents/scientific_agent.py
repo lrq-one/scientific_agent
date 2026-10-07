@@ -1427,11 +1427,27 @@ class ScientificAgent:
                 "count" in field or "coverage" in field for field in fields
             ):
                 issues.append("查询结果缺少样本数或覆盖字段，无法回答训练覆盖问题")
-            if ("误差" in goal or "预测表现" in goal) and database_rows and not any(
-                "error" in field or "mae" in field or "rmse" in field for field in fields
+            file_error_evidence = any(
+                item.source_type == "file"
+                and (
+                    "mae" in item.claim.lower()
+                    or "rmse" in item.claim.lower()
+                    or "误差" in item.claim
+                    or (
+                        isinstance(item.value, dict)
+                        and any(str(key).lower() in {"mae", "rmse", "absolute_error"} for key in item.value)
+                    )
+                )
+                for item in state.evidence
+            )
+            if (
+                ("误差" in goal or "预测表现" in goal)
+                and database_rows
+                and not file_error_evidence
+                and not any("error" in field or "mae" in field or "rmse" in field for field in fields)
             ):
                 issues.append("查询结果缺少误差指标字段，无法回答预测误差问题")
-            if ("不足" in goal or "显著" in goal or "差异" in goal) and database_rows:
+            if ("显著" in goal or "统计学" in goal or "significant" in goal) and database_rows:
                 counts = [row.get("sample_count", row.get("train_molecule_count")) for row in database_rows]
                 if any(isinstance(count, (int, float)) and count < 5 for count in counts):
                     issues.append("样本量小于 5，不能仅据此形成总体或显著性结论")
