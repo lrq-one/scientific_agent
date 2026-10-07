@@ -1,1 +1,86 @@
-param(\n    [switch]$NoDocker,\n    [switch]$NoFrontend\n)\n\n$ErrorActionPreference = "Stop"\n$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path\n$RuntimeDir = Join-Path $Root ".runtime"\nNew-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null\n\nSet-Location $Root\n\nif (-not $NoDocker) {\n    Write-Host "[1/4] Starting PostgreSQL and MinIO..."\n    docker compose up -d\n}\n\n$Python = Join-Path $Root ".venv\Scripts\python.exe"\nif (-not (Test-Path $Python)) {\n    throw "Python virtualenv not found: $Python. Create .venv and install the project first."\n}\n\nWrite-Host "[2/4] Starting FastAPI..."\n$BackendOut = Join-Path $RuntimeDir "backend.out.log"\n$BackendErr = Join-Path $RuntimeDir "backend.err.log"\n$Backend = Start-Process -FilePath $Python -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000") -WorkingDirectory $Root -RedirectStandardOutput $BackendOut -RedirectStandardError $BackendErr -PassThru\nSet-Content -Path (Join-Path $RuntimeDir "backend.pid") -Value $Backend.Id\n\nif (-not $NoFrontend) {\n    Write-Host "[3/4] Starting Vue/Vite..."\n    $WebRoot = Join-Path $Root "web"\n    $FrontendOut = Join-Path $RuntimeDir "frontend.out.log"\n    $FrontendErr = Join-Path $RuntimeDir "frontend.err.log"\n    $Frontend = Start-Process -FilePath "npm.cmd" -ArgumentList @("run", "dev", "--", "--host", "127.0.0.1") -WorkingDirectory $WebRoot -RedirectStandardOutput $FrontendOut -RedirectStandardError $FrontendErr -PassThru\n    Set-Content -Path (Join-Path $RuntimeDir "frontend.pid") -Value $Frontend.Id\n}\n\nWrite-Host "[4/4] Waiting for backend..."\n$Deadline = (Get-Date).AddSeconds(45)\n$Alive = $false\nwhile ((Get-Date) -lt $Deadline) {\n    try {\n        $Health = Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -TimeoutSec 2\n        if ($Health.status -eq "ok") {\n            $Alive = $true\n            break\n        }\n    }\n    catch {\n        Start-Sleep -Milliseconds 700\n    }\n}\nif (-not $Alive) {\n    Write-Warning "FastAPI did not become healthy within 45 seconds. See .runtime/backend.err.log"\n    exit 1\n}\n\nWrite-Host ""\nWrite-Host "FastAPI:  http://127.0.0.1:8000"\nWrite-Host "Docs:     http://127.0.0.1:8000/docs"\nif (-not $NoFrontend) { Write-Host "Web:      http://127.0.0.1:5173" }\ntry {\n    $Ready = Invoke-RestMethod -Uri "http://127.0.0.1:8000/ready" -TimeoutSec 5\n    Write-Host "Readiness:" $Ready.status\n    if (-not $Ready.ready) {\n        Write-Warning "Process is alive but one or more Agent dependencies are not ready. Run .\scripts\status-dev.ps1 for details."\n    }\n}\ncatch {\n    Write-Warning "Could not read /ready yet."\n}\n
+param(
+    [switch]$NoDocker,
+    [switch]$NoFrontend
+)
+
+$ErrorActionPreference = "Stop"
+$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$RuntimeDir = Join-Path $Root ".runtime"
+New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
+
+Set-Location $Root
+
+# First-run convenience: keep secrets local while providing documented dev defaults.
+$EnvFile = Join-Path $Root ".env"
+if (-not (Test-Path $EnvFile)) {
+    Copy-Item (Join-Path $Root ".env.example") $EnvFile
+    Write-Host "Created local .env from .env.example (git-ignored)."
+}
+
+# Import Windows User-level LLM settings when this shell did not inherit them.
+foreach ($Name in @("LLM_API_BASE", "LLM_API_KEY", "LLM_MODEL")) {
+    if (-not (Get-Item "Env:$Name" -ErrorAction SilentlyContinue)) {
+        $Value = [Environment]::GetEnvironmentVariable($Name, "User")
+        if ($Value) { Set-Item "Env:$Name" $Value }
+    }
+}
+
+if (-not $NoDocker) {
+    Write-Host "[1/4] Starting PostgreSQL and MinIO..."
+    docker compose up -d
+}
+
+$Python = Join-Path $Root ".venv\Scripts\python.exe"
+if (-not (Test-Path $Python)) {
+    throw "Python virtualenv not found: $Python. Create .venv and install the project first."
+}
+
+Write-Host "[2/4] Starting FastAPI..."
+$BackendOut = Join-Path $RuntimeDir "backend.out.log"
+$BackendErr = Join-Path $RuntimeDir "backend.err.log"
+$Backend = Start-Process -FilePath $Python -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000") -WorkingDirectory $Root -RedirectStandardOutput $BackendOut -RedirectStandardError $BackendErr -PassThru
+Set-Content -Path (Join-Path $RuntimeDir "backend.pid") -Value $Backend.Id
+
+if (-not $NoFrontend) {
+    Write-Host "[3/4] Starting Vue/Vite..."
+    $WebRoot = Join-Path $Root "web"
+    $FrontendOut = Join-Path $RuntimeDir "frontend.out.log"
+    $FrontendErr = Join-Path $RuntimeDir "frontend.err.log"
+    $Frontend = Start-Process -FilePath "npm.cmd" -ArgumentList @("run", "dev", "--", "--host", "127.0.0.1") -WorkingDirectory $WebRoot -RedirectStandardOutput $FrontendOut -RedirectStandardError $FrontendErr -PassThru
+    Set-Content -Path (Join-Path $RuntimeDir "frontend.pid") -Value $Frontend.Id
+}
+
+Write-Host "[4/4] Waiting for backend..."
+$Deadline = (Get-Date).AddSeconds(45)
+$Alive = $false
+while ((Get-Date) -lt $Deadline) {
+    try {
+        $Health = Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -TimeoutSec 2
+        if ($Health.status -eq "ok") {
+            $Alive = $true
+            break
+        }
+    }
+    catch {
+        Start-Sleep -Milliseconds 700
+    }
+}
+if (-not $Alive) {
+    Write-Warning "FastAPI did not become healthy within 45 seconds. See .runtime/backend.err.log"
+    exit 1
+}
+
+Write-Host ""
+Write-Host "FastAPI:  http://127.0.0.1:8000"
+Write-Host "Docs:     http://127.0.0.1:8000/docs"
+if (-not $NoFrontend) { Write-Host "Web:      http://127.0.0.1:5173" }
+try {
+    $Ready = Invoke-RestMethod -Uri "http://127.0.0.1:8000/ready" -TimeoutSec 5
+    Write-Host "Readiness:" $Ready.status
+    if (-not $Ready.ready) {
+        Write-Warning "Process is alive but one or more Agent dependencies are not ready. Run .\scripts\status-dev.ps1 for details."
+    }
+}
+catch {
+    Write-Warning "Could not read /ready yet."
+}
