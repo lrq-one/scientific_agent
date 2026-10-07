@@ -64,3 +64,9 @@ body{min-width:0}
 @media(max-width:900px){.sidebar{width:190px;padding:18px 10px}.content-grid{grid-template-columns:minmax(0,1fr);padding:12px}.progress-panel{max-height:38vh}.resource-bar{margin:12px;overflow-x:auto}.user-bubble{max-width:84%}}
 @media(max-width:620px){.app-shell{display:block}.sidebar{width:100%;max-height:175px}.side-note{display:none}main{max-height:none;min-height:100vh}.content-grid{display:flex;flex-direction:column}.conversation{min-height:60vh}.progress-panel{min-height:220px}.composer-actions{gap:8px;flex-wrap:wrap}}
 
+
+
+/* Runtime readiness should reflect backend reality, not a static green label. */
+.side-note.not-ready .pulse-dot{background:#e3a33a;box-shadow:0 0 0 4px #e3a33a1b}
+.side-note.not-ready b{color:#f0c06e}
+.side-note.not-ready small{color:#a58e69}
