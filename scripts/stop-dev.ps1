@@ -1,1 +1,29 @@
-param(\n    [switch]$KeepDocker\n)\n\n$ErrorActionPreference = "Continue"\n$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path\n$RuntimeDir = Join-Path $Root ".runtime"\n\nfunction Stop-RecordedProcess([string]$Name) {\n    $PidFile = Join-Path $RuntimeDir "$Name.pid"\n    if (-not (Test-Path $PidFile)) { return }\n    $RecordedPid = (Get-Content $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1)\n    if ($RecordedPid -and ($RecordedPid -match "^\d+$")) {\n        Write-Host "Stopping $Name process tree (PID $RecordedPid)..."\n        & taskkill.exe /PID $RecordedPid /T /F 2>$null | Out-Null\n    }\n    Remove-Item $PidFile -Force -ErrorAction SilentlyContinue\n}\n\nStop-RecordedProcess "frontend"\nStop-RecordedProcess "backend"\n\nif (-not $KeepDocker) {\n    Set-Location $Root\n    Write-Host "Stopping Docker services..."\n    docker compose stop | Out-Host\n}\n\nWrite-Host "Development runtime stopped."\n
+param(
+    [switch]$KeepDocker
+)
+
+$ErrorActionPreference = "Continue"
+$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$RuntimeDir = Join-Path $Root ".runtime"
+
+function Stop-RecordedProcess([string]$Name) {
+    $PidFile = Join-Path $RuntimeDir "$Name.pid"
+    if (-not (Test-Path $PidFile)) { return }
+    $RecordedPid = (Get-Content $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if ($RecordedPid -and ($RecordedPid -match "^\d+$")) {
+        Write-Host "Stopping $Name process tree (PID $RecordedPid)..."
+        & taskkill.exe /PID $RecordedPid /T /F 2>$null | Out-Null
+    }
+    Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
+}
+
+Stop-RecordedProcess "frontend"
+Stop-RecordedProcess "backend"
+
+if (-not $KeepDocker) {
+    Set-Location $Root
+    Write-Host "Stopping Docker services..."
+    docker compose stop | Out-Host
+}
+
+Write-Host "Development runtime stopped."
