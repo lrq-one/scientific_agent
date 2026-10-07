@@ -403,6 +403,22 @@ class ConversationRepository:
             ).fetchone()
         return row is not None
 
+    def active_task(self, conversation_id: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id::text, conversation_id::text, thread_id, status, intent_json,
+                       selected_skills_json, started_at, finished_at
+                FROM tasks
+                WHERE conversation_id = %s
+                  AND status IN ('running', 'waiting_for_user', 'cancelling')
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                (conversation_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
     def task_status(self, task_id: str, conversation_id: str) -> str | None:
         with self.connect() as connection:
             row = connection.execute(
