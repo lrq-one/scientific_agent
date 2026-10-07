@@ -968,6 +968,49 @@ class ScientificAgent:
                         result=result.model_dump(),
                     )
                     if not result.success:
+                        decision = classify_failure(result.error or "file tool failed", tool=selected_choice.tool)
+                        if decision.action == "alternative_tool":
+                            path = self._file_path(user_id, thread_id, names[0])
+                            fallback = self.files.inspect_table(path)
+                            fallback_call = self._record_tool(state, "inspect_table", fallback)
+                            result.metadata["recovered"] = fallback.success
+                            result.metadata["alternative_tool"] = "inspect_table"
+                            yield event(
+                                "RECOVERY_DECISION",
+                                "文件分析缺少所需字段，改为检查实际列结构",
+                                failure_kind=decision.failure_kind,
+                                action=decision.action,
+                                alternative_tool="inspect_table",
+                                reason=decision.reason[:500],
+                            )
+                            yield event(
+                                "TOOL_FINISHED",
+                                "已检查文件实际列结构",
+                                tool="inspect_table",
+                                result=fallback.model_dump(),
+                            )
+                            if fallback.success:
+                                evidence = self._add_evidence(
+                                    state,
+                                    f"{names[0]} 可用列与行数",
+                                    fallback.data,
+                                    "file",
+                                    names[0],
+                                    fallback_call,
+                                    self._file_dataset_version(path),
+                                )
+                                yield event("EVIDENCE_ADDED", "已保存文件结构证据", evidence=evidence.model_dump())
+                                state.uncertainties.append(
+                                    f"原工具 {selected_choice.tool} 无法完成：{result.error}"
+                                )
+                                state.final_answer = self._finalize(state)
+                                yield event(
+                                    "FINAL_ANSWER",
+                                    "当前字段不足以完成请求",
+                                    answer=state.final_answer,
+                                    state=state.model_dump(mode="json"),
+                                )
+                                return
                         state.final_answer = self._finalize(state)
                         yield event("FINAL_ANSWER", "分析未完成", answer=state.final_answer, state=state.model_dump(mode="json"))
                         return
