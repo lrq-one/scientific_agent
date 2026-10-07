@@ -127,8 +127,15 @@ class ToolRegistry:
             else permission_filtered
         )
         if current_step_tools:
-            preferred = [spec for spec in skill_filtered if spec.name in set(current_step_tools)]
-            return preferred or skill_filtered
+            # The current plan step is a hard execution boundary. Skill routing
+            # may narrow the set further, but a weak/mismatched Skill selection
+            # must never widen execution back to unrelated tools or make a
+            # trusted mandatory step impossible.
+            step_names = set(current_step_tools)
+            preferred = [spec for spec in skill_filtered if spec.name in step_names]
+            if preferred:
+                return preferred
+            return [spec for spec in permission_filtered if spec.name in step_names]
         return skill_filtered
 
     async def select(
