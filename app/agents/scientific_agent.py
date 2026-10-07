@@ -975,6 +975,12 @@ class ScientificAgent:
                     self.pending[thread_id] = {"query": query, "user_id": user_id, "datasource_id": datasource_id}
                     yield event("WAITING_FOR_USER", "等待用户补充信息", question=f"请上传缺失文件：{', '.join(missing)}", missing_files=missing)
                     return
+                dispatch_context = ToolExecutionContext(
+                    user_id=user_id,
+                    thread_id=thread_id,
+                    resources=resources,
+                    datasource_id=datasource_id,
+                )
                 if intent.complexity == "simple":
                     if selected_choice is None:
                         state.uncertainties.append("当前文件任务没有形成可执行且参数完整的 ToolCall")
@@ -983,12 +989,6 @@ class ScientificAgent:
                         return
                     # The selected and validated ToolChoice is now the execution authority
                     # for simple file tasks rather than trace-only metadata.
-                    context = ToolExecutionContext(
-                        user_id=user_id,
-                        thread_id=thread_id,
-                        resources=resources,
-                        datasource_id=datasource_id,
-                    )
                     yield event(
                         "TOOL_STARTED",
                         "正在执行已选择的文件工具",
@@ -997,7 +997,7 @@ class ScientificAgent:
                         selection_source=selection_source,
                     )
                     try:
-                        result = await self.tool_dispatcher.execute(selected_choice, context)
+                        result = await self.tool_dispatcher.execute(selected_choice, dispatch_context)
                     except Exception as exc:
                         result = ToolResult(
                             success=False,
@@ -1125,7 +1125,14 @@ class ScientificAgent:
                     for name in names[:2]:
                         path = self._file_path(user_id, thread_id, name)
                         yield event("TOOL_STARTED", "正在计算指标", tool="calculate_metrics", source=name)
-                        result = self.files.calculate_metrics(path)
+                        result = await self.tool_dispatcher.execute(
+                            ToolChoice(
+                                tool="calculate_metrics",
+                                arguments={"filename": name},
+                                reason="file-comparison plan step",
+                            ),
+                            dispatch_context,
+                        )
                         call_id = self._record_tool(state, "calculate_metrics", result)
                         if comparison_step:
                             comparison_step.observations.append({"tool": "calculate_metrics", "source": name, "success": result.success})
@@ -1176,9 +1183,14 @@ class ScientificAgent:
                     if len(names) >= 2:
                         yield event("TOOL_STARTED", "正在按 molecule_id 配对比较模型", tool="compare_models",
                                     sources=names[:2])
-                        pairwise = self.files.compare_models([
-                            self._file_path(user_id, thread_id, name) for name in names[:2]
-                        ])
+                        pairwise = await self.tool_dispatcher.execute(
+                            ToolChoice(
+                                tool="compare_models",
+                                arguments={"filenames": names[:2]},
+                                reason="file-comparison plan step requires paired model comparison",
+                            ),
+                            dispatch_context,
+                        )
                         pairwise_call = self._record_tool(state, "compare_models", pairwise)
                         if comparison_step:
                             comparison_step.observations.append({"tool": "compare_models", "success": pairwise.success,
@@ -1282,7 +1294,14 @@ class ScientificAgent:
                         if subgroup_step:
                             yield event("PLAN_STEP_STARTED", "开始执行计划步骤", step_id="subgroup-analysis", status="running")
                         yield event("TOOL_STARTED", "正在分析结构子群", tool="group_metrics", source=target_name)
-                        subgroup = self.files.group_metrics(target_path)
+                        subgroup = await self.tool_dispatcher.execute(
+                            ToolChoice(
+                                tool="group_metrics",
+                                arguments={"filename": target_name, "group": "structure_type"},
+                                reason="subgroup-analysis plan step",
+                            ),
+                            dispatch_context,
+                        )
                         call_id = self._record_tool(state, "group_metrics", subgroup)
                         if subgroup_step:
                             subgroup_step.observations.append({"tool": "group_metrics", "success": subgroup.success})
