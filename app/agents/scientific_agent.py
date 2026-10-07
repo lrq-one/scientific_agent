@@ -415,45 +415,79 @@ class ScientificAgent:
         if schema_step:
             yield event("PLAN_STEP_STARTED", "开始检索 Schema 计划步骤", step_id=schema_step.step_id, status="running")
         database = DatabaseService(selected, resources.authorized_datasources)
-        yield event("TOOL_STARTED", "正在检索数据库结构", tool="schema_retrieval", datasource=selected)
+        yield event("TOOL_STARTED", "正在检索相关数据库 Schema", tool="search_schema", datasource=selected)
         try:
-            schema = await bounded_transient_retry(lambda: asyncio.to_thread(database.schema))
+            if hasattr(database, "search_schema"):
+                schema_hits = await bounded_transient_retry(
+                    lambda: asyncio.to_thread(database.search_schema, query, 5)
+                )
+            else:
+                raw_schema = await bounded_transient_retry(lambda: asyncio.to_thread(database.schema))
+                hits = self.text2sql.retriever.search(query, raw_schema.data, [])
+                schema_hits = ToolResult(
+                    success=True,
+                    data=hits,
+                    source=selected,
+                    metadata={"retriever": "bm25", "compatibility_path": True},
+                )
+            if not schema_hits.success or not isinstance(schema_hits.data, list) or not schema_hits.data:
+                raise RuntimeError(schema_hits.error or "schema retrieval returned no candidates")
+            schema_map = {
+                str(hit["table"]): hit.get("columns", [])
+                for hit in schema_hits.data
+                if isinstance(hit, dict) and hit.get("table")
+            }
+            schema = ToolResult(
+                success=bool(schema_map),
+                data=schema_map,
+                source=selected,
+                metadata={
+                    **(schema_hits.metadata or {}),
+                    "retrieved_tables": list(schema_map),
+                    "top_k": 5,
+                },
+                error=None if schema_map else "schema retrieval returned no table definitions",
+            )
+            if not schema.success:
+                raise RuntimeError(schema.error)
         except Exception as exc:
-            decision = classify_failure(exc, tool="schema_retrieval")
+            decision = classify_failure(exc, tool="search_schema")
             failed = ToolResult(success=False, source=selected, error=str(exc), metadata={"failure_kind": decision.failure_kind})
-            self._record_tool(state, "schema_retrieval", failed)
+            self._record_tool(state, "search_schema", failed)
             if schema_step:
                 schema_step.status = "failed"
                 schema_step.error = str(exc)[:500]
-            yield event("TOOL_FINISHED", "数据库结构检索失败", tool="schema_retrieval", result=failed.model_dump())
+            yield event("TOOL_FINISHED", "相关 Schema 检索失败", tool="search_schema", result=failed.model_dump())
             yield event("RECOVERY_DECISION", "结构检索未完成，安全终止", failure_kind=decision.failure_kind,
                         action="fail_safely", reason=decision.reason[:500])
             state.final_answer = self._finalize(state)
             yield event("FINAL_ANSWER", "分析未完成", answer=state.final_answer, state=state.model_dump(mode="json"))
             return
-        self._record_tool(state, "schema_retrieval", schema)
-        yield event("TOOL_FINISHED", "数据库结构检索完成", tool="schema_retrieval", result=schema.model_dump())
+        self._record_tool(state, "search_schema", schema)
+        yield event("TOOL_FINISHED", "相关 Schema 检索完成", tool="search_schema", result=schema.model_dump())
         try:
             relationships = await bounded_transient_retry(lambda: asyncio.to_thread(database.relationships))
         except Exception as exc:
-            decision = classify_failure(exc, tool="schema_relationships")
+            decision = classify_failure(exc, tool="get_table_relationships")
             failed = ToolResult(success=False, source=selected, error=str(exc), metadata={"failure_kind": decision.failure_kind})
-            self._record_tool(state, "schema_relationships", failed)
+            self._record_tool(state, "get_table_relationships", failed)
             if schema_step:
                 schema_step.status = "failed"
                 schema_step.error = str(exc)[:500]
-            yield event("TOOL_FINISHED", "表关系检索失败", tool="schema_relationships", result=failed.model_dump())
+            yield event("TOOL_FINISHED", "表关系检索失败", tool="get_table_relationships", result=failed.model_dump())
             yield event("RECOVERY_DECISION", "表关系检索未完成，安全终止", failure_kind=decision.failure_kind,
                         action="fail_safely", reason=decision.reason[:500])
             state.final_answer = self._finalize(state)
             yield event("FINAL_ANSWER", "分析未完成", answer=state.final_answer, state=state.model_dump(mode="json"))
             return
-        self._record_tool(state, "schema_relationships", relationships)
-        yield event("TOOL_FINISHED", "表关系检索完成", tool="schema_relationships", result=relationships.model_dump())
+        self._record_tool(state, "get_table_relationships", relationships)
+        yield event("TOOL_FINISHED", "表关系检索完成", tool="get_table_relationships", result=relationships.model_dump())
         if schema_step:
-            schema_step.observations = [{"tool": "schema_retrieval", "success": schema.success},
-                                        {"tool": "schema_relationships", "success": relationships.success}]
-            self._finish_plan_step(schema_step, "Schema 与关系已检索")
+            schema_step.observations = [
+                {"tool": "search_schema", "success": schema.success, "tables": list(schema.data)},
+                {"tool": "get_table_relationships", "success": relationships.success},
+            ]
+            self._finish_plan_step(schema_step, "相关 Schema 与关系已检索")
             yield event("PLAN_STEP_FINISHED", "Schema 计划步骤完成", step_id=schema_step.step_id, status="completed")
         sql_step = self._start_plan_step(state, "sql-generation") if any(
             step.step_id == "sql-generation" for step in state.plan
