@@ -959,10 +959,10 @@ class ScientificAgent:
                         self._finish_plan_step(comparison_step, f"已比较 {len(model_results)} 个模型文件")
                         yield event("PLAN_STEP_FINISHED", "计划步骤完成", step_id="file-comparison", status="completed")
 
+                    target_name = names[1] if len(names) > 1 else names[0]
+                    target_path = self._file_path(user_id, thread_id, target_name)
                     run_subgroup = any(step.step_id == "subgroup-analysis" for step in state.plan)
                     if run_subgroup:
-                        target_name = names[1] if len(names) > 1 else names[0]
-                        target_path = self._file_path(user_id, thread_id, target_name)
                         subgroup_step = (
                             self._start_plan_step(state, "subgroup-analysis")
                             if any(step.step_id == "subgroup-analysis" for step in state.plan)
