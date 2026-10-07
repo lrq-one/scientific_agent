@@ -659,20 +659,41 @@ class ScientificAgent:
                 skill_llm_telemetry=skill_selection_telemetry,
             )
 
+            known_filenames = re.findall(r"[\w.-]+\.(?:csv|xlsx|xls)", query, flags=re.I)
+            molecule_match = re.search(r"\b((?:M|T)\d{3,})\b", query, flags=re.I)
             first_tool = {
-                "file_analysis": "inspect_table" if intent.complexity == "simple" else "calculate_metrics",
+                "file_analysis": self._preferred_file_tool(query) if intent.complexity == "simple" else "calculate_metrics",
                 "mixed_analysis": "calculate_metrics",
                 "database_analysis": "search_schema",
                 "scientific_model": "predict_rt",
             }.get(intent.task_type)
+            step_filter = (
+                None
+                if intent.task_type == "file_analysis" and intent.complexity == "simple"
+                else [first_tool] if first_tool else None
+            )
             candidates = self.tool_registry.candidates(
                 available_capabilities=candidate_capabilities,
                 role="researcher",
                 selected_skills=state.selected_skills,
-                current_step_tools=[first_tool] if first_tool else None,
+                current_step_tools=step_filter,
             )
+            argument_context = {
+                "query": query,
+                "filename": known_filenames[0] if len(known_filenames) == 1 else None,
+                "filenames": known_filenames or None,
+                "group": "structure_type" if any(word in query.lower() for word in ("结构", "structure", "fused", "cyclic")) else None,
+                "datasource_id": datasource_id,
+                "dataset_version": effective_dataset_version,
+                "molecule_id": molecule_match.group(1).upper() if molecule_match else None,
+            }
+            argument_context = {key: value for key, value in argument_context.items() if value is not None}
             selected_choice, selection_source, selection_telemetry = await self.tool_registry.select(
-                query, "initial", candidates, first_tool
+                query,
+                "initial",
+                candidates,
+                first_tool,
+                argument_context=argument_context,
             )
             yield event(
                 "TOOL_CANDIDATES",
