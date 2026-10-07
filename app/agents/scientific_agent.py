@@ -107,6 +107,13 @@ class ScientificAgent:
             return demo_path
         raise FileNotFoundError(name)
 
+    @staticmethod
+    def _file_dataset_version(path: Path) -> str | None:
+        try:
+            return "synthetic_demo" if path.resolve().parent == DEMO_DATA.resolve() else None
+        except OSError:
+            return None
+
     def _record_tool(self, state: ScientificAgentState, tool: str, result: ToolResult) -> str:
         if state.tool_call_count >= MAX_TOOL_CALLS:
             raise ToolLimitExceeded(f"tool call limit ({MAX_TOOL_CALLS}) reached")
@@ -769,16 +776,56 @@ class ScientificAgent:
                     yield event("WAITING_FOR_USER", "等待用户补充信息", question=f"请上传缺失文件：{', '.join(missing)}", missing_files=missing)
                     return
                 if intent.complexity == "simple":
-                    path = self._file_path(user_id, thread_id, names[0])
-                    yield event("TOOL_STARTED", "正在读取实验文件", tool="inspect_columns", source=names[0])
-                    result = self.files.inspect_columns(path)
-                    call_id = self._record_tool(state, "inspect_columns", result)
-                    yield event("TOOL_FINISHED", "文件读取完成", tool="inspect_columns", result=result.model_dump())
+                    if selected_choice is None:
+                        state.uncertainties.append("当前文件任务没有形成可执行且参数完整的 ToolCall")
+                        state.final_answer = self._finalize(state)
+                        yield event("FINAL_ANSWER", "未形成可执行工具调用", answer=state.final_answer, state=state.model_dump(mode="json"))
+                        return
+                    # The selected and validated ToolChoice is now the execution authority
+                    # for simple file tasks rather than trace-only metadata.
+                    context = ToolExecutionContext(
+                        user_id=user_id,
+                        thread_id=thread_id,
+                        resources=resources,
+                        datasource_id=datasource_id,
+                    )
+                    yield event(
+                        "TOOL_STARTED",
+                        "正在执行已选择的文件工具",
+                        tool=selected_choice.tool,
+                        arguments=selected_choice.arguments,
+                        selection_source=selection_source,
+                    )
+                    try:
+                        result = await self.tool_dispatcher.execute(selected_choice, context)
+                    except Exception as exc:
+                        result = ToolResult(
+                            success=False,
+                            source=names[0],
+                            error=str(exc),
+                            metadata={"error_type": type(exc).__name__, "dispatcher": True},
+                        )
+                    call_id = self._record_tool(state, selected_choice.tool, result)
+                    yield event(
+                        "TOOL_FINISHED",
+                        "文件工具执行完成",
+                        tool=selected_choice.tool,
+                        result=result.model_dump(),
+                    )
                     if not result.success:
                         state.final_answer = self._finalize(state)
                         yield event("FINAL_ANSWER", "分析未完成", answer=state.final_answer, state=state.model_dump(mode="json"))
                         return
-                    evidence = self._add_evidence(state, f"{names[0]} 行数", result.data["rows"], "file", names[0], call_id, "synthetic_demo")
+                    path = self._file_path(user_id, thread_id, names[0])
+                    evidence = self._add_evidence(
+                        state,
+                        f"{names[0]} · {selected_choice.tool} 结果",
+                        result.data,
+                        "file",
+                        names[0],
+                        call_id,
+                        self._file_dataset_version(path),
+                    )
                     yield event("EVIDENCE_ADDED", "已获得新的科研证据", evidence=evidence.model_dump())
                 else:
                     await asyncio.sleep(0)
@@ -801,7 +848,10 @@ class ScientificAgent:
                             yield event("FINAL_ANSWER", "分析未完成", answer=state.final_answer, state=state.model_dump(mode="json"))
                             return
                         model_results[name] = result.data
-                        evidence = self._add_evidence(state, f"{name} 整体 MAE", result.data["mae"], "file", name, call_id, "synthetic_demo")
+                        evidence = self._add_evidence(
+                            state, f"{name} 整体 MAE", result.data["mae"], "file", name, call_id,
+                            self._file_dataset_version(path),
+                        )
                         if comparison_step:
                             comparison_step.evidence_ids.append(evidence.evidence_id)
                         yield event("EVIDENCE_ADDED", "已获得新的科研证据", evidence=evidence.model_dump())
@@ -832,7 +882,15 @@ class ScientificAgent:
                         else:
                             paired_evidence = self._add_evidence(
                                 state, "按 molecule_id 配对的模型误差比较", pairwise.data, "file",
-                                ",".join(names[:2]), pairwise_call, "synthetic_demo",
+                                ",".join(names[:2]), pairwise_call,
+                                (
+                                    "synthetic_demo"
+                                    if all(
+                                        self._file_dataset_version(self._file_path(user_id, thread_id, name)) == "synthetic_demo"
+                                        for name in names[:2]
+                                    )
+                                    else None
+                                ),
                             )
                             if comparison_step:
                                 comparison_step.evidence_ids.append(paired_evidence.evidence_id)
@@ -879,7 +937,10 @@ class ScientificAgent:
                         return
                     fused = next((row for row in subgroup.data if str(row["structure_type"]).lower() == "fused_ring"), None)
                     if fused:
-                        evidence = self._add_evidence(state, f"{target_name} fused_ring MAE", fused["mae"], "file", target_name, call_id, "synthetic_demo")
+                        evidence = self._add_evidence(
+                            state, f"{target_name} fused_ring MAE", fused["mae"], "file", target_name, call_id,
+                            self._file_dataset_version(target_path),
+                        )
                         if subgroup_step:
                             subgroup_step.evidence_ids.append(evidence.evidence_id)
                         yield event("EVIDENCE_ADDED", "已获得新的科研证据", evidence=evidence.model_dump())
