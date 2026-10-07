@@ -124,7 +124,26 @@ class ToolDispatcher:
             datasource_id = self._datasource(context, args)
             database = self.database_factory(datasource_id, context.resources.authorized_datasources)
             if name == "search_schema":
-                return database.search_schema(str(args["query"]))
+                if hasattr(database, "search_schema"):
+                    return database.search_schema(str(args["query"]))
+                # Compatibility for injected/test data sources that expose only
+                # schema()/relationships(); production PostgreSQL uses the
+                # native BM25 search_schema implementation.
+                from app.services.text2sql import SchemaRetriever
+
+                schema = database.schema()
+                relationships = database.relationships()
+                hits = SchemaRetriever(top_k=5).search(
+                    str(args["query"]),
+                    schema.data,
+                    relationships.data if relationships.success else [],
+                )
+                return ToolResult(
+                    success=True,
+                    data=hits,
+                    source=getattr(database, "datasource_id", datasource_id),
+                    metadata={"retriever": "bm25", "compatibility_path": True},
+                )
             if name == "get_table_schema":
                 return database.get_table_schema(str(args["table"]))
             if name == "get_table_relationships":
