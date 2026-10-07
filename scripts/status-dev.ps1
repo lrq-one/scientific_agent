@@ -53,7 +53,8 @@ try {
     Write-Host "readiness:" $Ready.status
     $Ready.components.PSObject.Properties | ForEach-Object {
         $Value = $_.Value
-        Write-Host ("  {0,-16} {1} ready={2}" -f $_.Name, $Value.status, $Value.ready)
+        $Detail = if ($Value.detail) { " detail=$($Value.detail)" } else { "" }
+        Write-Host ("  {0,-16} {1} ready={2}{3}" -f $_.Name, $Value.status, $Value.ready, $Detail)
     }
 } catch {
     Write-Host "readiness: unavailable"
