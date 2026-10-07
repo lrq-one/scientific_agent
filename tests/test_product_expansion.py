@@ -19,10 +19,27 @@ from app.services.workspace import WorkspaceService
 from app.tools.registry import ToolRegistry
 
 
-def test_skill_catalog_preserves_original_nine_and_checks_contract_sections():
+def test_skill_catalog_preserves_core_and_v2_business_workflows():
     skills = SkillService().load()
-    assert len(skills) == 10
-    assert "cross_dataset_comparison" in {skill["name"] for skill in skills}
+    names = {skill["name"] for skill in skills}
+    expected = {
+        "model_comparison",
+        "mass_spec_error_analysis",
+        "training_coverage_analysis",
+        "dataset_quality_audit",
+        "structure_subgroup_analysis",
+        "model_regression_diagnosis",
+        "rt_prediction_review",
+        "experiment_reproducibility_check",
+        "scientific_result_summary",
+        "cross_dataset_comparison",
+        "model_data_consistency_check",
+        "distribution_shift_analysis",
+        "experiment_run_diagnosis",
+        "annotation_candidate_analysis",
+        "spectrum_quality_analysis",
+    }
+    assert expected <= names
     required_sections = [
         "# Purpose", "# When to Use", "# When NOT to Use", "# Preconditions",
         "# Required Inputs", "# Procedure", "# Tool Policy", "# Decision Rules",
