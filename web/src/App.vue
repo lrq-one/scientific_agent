@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { marked } from 'marked'
 import {
-  cancelTask, createConversation, deleteConversation, downloadArtifact, getConversation,
+  cancelTask, createConversation, deleteConversation, downloadArtifact, getConversation, getReadiness,
   getResources, listConversations, reconnectTask, renameConversation, resumeTask, streamConversation, uploadFile,
 } from './api'
 import { createConversationLoader } from './conversationLoader'
@@ -35,7 +35,9 @@ const timeline = ref(null)
 const traceOpen = ref(true)
 const folds = ref({ plan: true, evidence: true, artifacts: true })
 const trace = ref(emptyTrace())
+const readiness = ref({ status: 'checking', ready: false, components: {} })
 let sidebarTimer = null
+let readinessTimer = null
 
 const conversationLoader = createConversationLoader({
   fetchConversation: getConversation,
@@ -56,12 +58,12 @@ const labels = {
   PLAN_STEP_FINISHED: '计划步骤完成', TOOL_FINISHED: '工具执行完成',
   EVIDENCE_ADDED: '已获得新的科研证据', ARTIFACT_CREATED: '已生成结果产物',
   WAITING_FOR_USER: '等待用户补充信息', PLAN_REVISED: '已根据观察调整计划',
-  RECOVERY_DECISION: '已判断恢复策略',
+  RECOVERY_DECISION: '已判断恢复策略', INTERACTION_RESOLVED: '已理解本轮交互',
   CANCELLED: '已取消任务', FINAL_ANSWER: '分析完成', ERROR: '执行出错',
 }
 
 function emptyTrace() {
-  return { intent: null, followup: null, skills: [], plan: [], tools: [], candidates: [], evidence: [], claims: [], sql: null, artifacts: [], waiting: '' }
+  return { interaction: null, intent: null, followup: null, skills: [], plan: [], tools: [], candidates: [], evidence: [], claims: [], sql: null, artifacts: [], waiting: '' }
 }
 
 const resourceCount = computed(() => resources.value.available_files.length + resources.value.authorized_datasources.length + resources.value.available_scientific_models.length)
@@ -84,6 +86,14 @@ async function refreshResources() {
 
 async function refreshConversations() {
   conversations.value = (await listConversations()).items
+}
+
+async function refreshReadiness() {
+  try {
+    readiness.value = await getReadiness()
+  } catch {
+    readiness.value = { status: 'unavailable', ready: false, components: {} }
+  }
 }
 
 function sidebarStatus(item) {
@@ -119,6 +129,7 @@ function applyPersistedTrace(task, detail) {
   fresh.skills = task.selected_skills_json || []
   for (const row of eventsForTask(task.id, detail)) {
     const data = row.payload_json || {}
+    if (row.event_type === 'INTERACTION_RESOLVED') fresh.interaction = data
     if (row.event_type === 'FOLLOW_UP_TYPE') fresh.followup = data
     if (row.event_type === 'PLAN_CREATED') fresh.plan = data.plan || []
     if (row.event_type === 'PLAN_REVISED') fresh.plan = data.revised_plan || fresh.plan
@@ -206,6 +217,7 @@ function receive(sourceConversationId, type, data) {
   if (type === 'FINAL_ANSWER' || type === 'CANCELLED' || type === 'ERROR') refreshConversations().catch(() => {})
   if (sourceConversationId !== conversationId.value || conversationLoading.value) return
   events.value.push({ type, text: labels[type] || type, detail: data.message, time: new Date().toLocaleTimeString() })
+  if (type === 'INTERACTION_RESOLVED') trace.value.interaction = data
   if (type === 'INTENT_RESOLVED') { trace.value.intent = data.intent; trace.value.skills = data.selected_skills || [] }
   if (type === 'FOLLOW_UP_TYPE') trace.value.followup = data
   if (type === 'PLAN_CREATED') trace.value.plan = data.plan || []
@@ -352,12 +364,14 @@ function onPopState() {
 }
 
 onMounted(() => {
-  window.addEventListener('popstate', onPopState); initialize()
+  window.addEventListener('popstate', onPopState); initialize(); refreshReadiness()
   sidebarTimer = window.setInterval(() => refreshConversations().catch(() => {}), 3000)
+  readinessTimer = window.setInterval(() => refreshReadiness(), 10000)
 })
 onUnmounted(() => {
   window.removeEventListener('popstate', onPopState); conversationLoader.cancel()
   window.clearInterval(sidebarTimer)
+  window.clearInterval(readinessTimer)
   for (const controller of reconnectControllers.values()) controller.abort()
 })
 </script>
@@ -376,7 +390,7 @@ onUnmounted(() => {
           </div>
         </template>
       </div>
-      <div class="side-note"><span class="pulse-dot"></span><div><b>系统运行正常</b><small>Scientific Agent Ready</small></div></div>
+      <div :class="['side-note', { 'not-ready': !readiness.ready }]"><span class="pulse-dot"></span><div><b>{{ readiness.ready ? '系统已就绪' : readiness.status === 'checking' ? '正在检查服务' : '部分服务未就绪' }}</b><small>{{ readiness.ready ? 'Scientific Agent Ready' : '查看 /ready 或运行 status-dev.ps1' }}</small></div></div>
     </aside>
 
     <main>
@@ -399,7 +413,7 @@ onUnmounted(() => {
             </div>
           </div>
           <div v-if="!conversationLoading && pendingQuestion" class="hitl"><b>需要补充信息</b><p>{{ pendingQuestion }}</p><div><input v-model="answer" placeholder="输入补充信息…" @keyup.enter="resume"><button @click="resume">继续任务</button><button @click="cancelPending">取消任务</button></div></div>
-          <div class="composer"><textarea v-model="query" rows="3" placeholder="描述你的科研目标…" @keydown.ctrl.enter.prevent="send"></textarea><div class="composer-actions"><div><input ref="fileInput" type="file" accept=".csv,.xlsx,.xls" hidden @change="handleUpload"><button class="attach" @click="fileInput.click()">↑ 上传 CSV / Excel</button><select v-model="datasourceId"><option value="">不指定数据源</option><option v-for="source in resources.authorized_datasources" :key="source">{{ source }}</option></select><span>Ctrl + Enter 发送</span></div><button class="send" :disabled="currentStatus === 'cancelling' || (busy && activeTaskId.startsWith('pending:')) || (!busy && !query.trim())" @click="busy ? cancelRunning() : send()">{{ currentStatus === 'cancelling' ? '正在取消…' : busy ? '■ 取消执行' : currentStatus === 'failed' ? '重新分析' : '开始分析' }} <span v-if="!busy">→</span></button></div></div>
+          <div class="composer"><textarea v-model="query" rows="3" placeholder="描述你的科研目标…" @keydown.ctrl.enter.prevent="send"></textarea><div class="composer-actions"><div><input ref="fileInput" type="file" accept=".csv,.xlsx,.xls" hidden @change="handleUpload"><button class="attach" @click="fileInput.click()">↑ 上传 CSV / Excel</button><select v-model="datasourceId"><option value="">不指定数据源</option><option v-for="source in resources.authorized_datasources" :key="source">{{ source }}</option></select><span>Ctrl + Enter 发送</span></div><button class="send" :disabled="currentStatus === 'waiting_for_user' || currentStatus === 'cancelling' || (busy && activeTaskId.startsWith('pending:')) || (!busy && !query.trim())" @click="busy ? cancelRunning() : send()">{{ currentStatus === 'waiting_for_user' ? '等待补充信息' : currentStatus === 'cancelling' ? '正在取消…' : busy ? '■ 取消执行' : currentStatus === 'failed' ? '重新分析' : '开始分析' }} <span v-if="!busy && currentStatus !== 'waiting_for_user'">→</span></button></div></div>
         </section>
 
         <aside class="progress-panel">
@@ -407,6 +421,7 @@ onUnmounted(() => {
           <section class="trace-card"><button class="trace-toggle" @click="traceOpen = !traceOpen"><span>Agent Trace</span><i>{{ traceOpen ? '−' : '+' }}</i></button><div v-if="traceOpen" class="trace-body">
             <div v-if="conversationLoading" class="trace-loading"><i></i><i></i><i></i></div>
             <template v-else>
+            <div v-if="trace.interaction" class="trace-block"><label>Interaction</label><p><b>{{ trace.interaction.interaction_type }}</b></p><small>{{ trace.interaction.reason || trace.interaction.source || 'no tool execution' }}</small></div>
             <div v-if="trace.followup" class="trace-block"><label>Follow-up</label><p><b>{{ trace.followup.follow_up_type }}</b></p><small>previous task: {{ trace.followup.previous_task_id || 'none' }} · loaded evidence: {{ trace.followup.loaded_evidence_count }} · new tool calls: {{ trace.followup.new_tool_calls ?? 'pending' }}</small></div>
             <div v-if="trace.intent" class="trace-block"><label>Intent</label><p><b>{{ trace.intent.task_type }}</b> · {{ trace.intent.complexity }}</p><small>{{ trace.intent.domain }} · {{ trace.intent.required_capabilities?.join(' / ') }}</small></div>
             <div v-if="trace.skills.length" class="trace-block"><label>Selected Skills</label><span v-for="skill in trace.skills" :key="skill" class="trace-chip">{{ skill }}</span></div>
