@@ -1,7 +1,7 @@
 import pytest
 
 from app.agents.scientific_agent import ScientificAgent, ToolLimitExceeded
-from app.models.schemas import ScientificAgentState, ToolResult
+from app.models.schemas import ResourceSummary, ScientificAgentState, ToolResult
 
 
 @pytest.mark.asyncio
@@ -14,7 +14,13 @@ async def test_simple_file_route_runs():
 @pytest.mark.asyncio
 async def test_mixed_end_to_end():
     query = "比较 model_v1.csv 和 model_v2.csv，分析为什么新模型在 fused-ring 分子上误差更高，并检查是不是 training_db 训练数据覆盖不足。"
-    events = [event async for event in ScientificAgent().stream(query, "tester", "mixed")]
+    agent = ScientificAgent()
+    agent.resources.discover = lambda user_id, thread_id: ResourceSummary(
+        available_files=["model_v1.csv", "model_v2.csv"],
+        authorized_datasources=["training_db"],
+        available_mcp_tools=["get_molecule_features"],
+    )
+    events = [event async for event in agent.stream(query, "tester", "mixed")]
     names = [event.event for event in events]
     assert "PLAN_CREATED" in names
     assert names.count("TOOL_STARTED") >= 5
@@ -59,7 +65,12 @@ async def test_hitl_interrupt_and_resume():
 async def test_explicit_dataset_version_does_not_trigger_hitl(monkeypatch):
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    events = [item async for item in ScientificAgent().stream(
+    agent = ScientificAgent()
+    agent.resources.discover = lambda user_id, thread_id: ResourceSummary(
+        authorized_datasources=["training_db"],
+        available_mcp_tools=["get_molecule_features"],
+    )
+    events = [item async for item in agent.stream(
         "统计 training_db 中 train_v3 的结构类型训练覆盖", "tester", "explicit-version-no-hitl"
     )]
     assert not any(item.event == "WAITING_FOR_USER" for item in events)

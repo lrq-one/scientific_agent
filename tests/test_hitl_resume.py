@@ -3,7 +3,7 @@ import uuid
 import pytest
 
 from app.agents.scientific_agent import ScientificAgent
-from app.models.schemas import ScientificAgentState, ToolResult
+from app.models.schemas import ResourceSummary, ScientificAgentState, ToolResult
 
 
 @pytest.mark.asyncio
@@ -13,6 +13,10 @@ async def test_dataset_version_interrupt_and_command_resume(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     thread_id = f"hitl-{uuid.uuid4()}"
     agent = ScientificAgent()
+    agent.resources.discover = lambda user_id, task_thread_id: ResourceSummary(
+        authorized_datasources=["training_db"],
+        available_mcp_tools=["get_molecule_features"],
+    )
     first = [event async for event in agent.stream("分析 fused-ring 在训练数据中的覆盖情况。", "tester", thread_id)]
     assert first[-1].event == "WAITING_FOR_USER"
     assert first[-1].data["field"] == "dataset_version"

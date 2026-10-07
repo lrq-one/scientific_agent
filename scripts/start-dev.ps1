@@ -19,9 +19,9 @@ if (-not (Test-Path $EnvFile)) {
 
 # Import Windows User-level LLM settings when this shell did not inherit them.
 foreach ($Name in @("LLM_API_BASE", "LLM_API_KEY", "LLM_MODEL")) {
-    if (-not (Get-Item "Env:$Name" -ErrorAction SilentlyContinue)) {
-        $Value = [Environment]::GetEnvironmentVariable($Name, "User")
-        if ($Value) { Set-Item "Env:$Name" $Value }
+    $UserValue = [Environment]::GetEnvironmentVariable($Name, "User")
+    if ($UserValue) {
+        Set-Item "Env:$Name" $UserValue
     }
 }
 
