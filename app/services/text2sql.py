@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from rank_bm25 import BM25Okapi
 
 from app.models.schemas import SQLCandidate
+from app.config import ALLOW_DETERMINISTIC_LLM_FALLBACK
 from app.services.llm_config import llm_settings
 from app.services.llm_telemetry import UsageCollector
 
@@ -211,6 +212,10 @@ class TextToSQLService:
                     candidate.params["dataset_version"] = dataset_version
                 return candidate, metadata
             except Exception as exc:
+                if not ALLOW_DETERMINISTIC_LLM_FALLBACK:
+                    raise RuntimeError(
+                        f"real Text-to-SQL LLM call failed ({type(exc).__name__}); deterministic fixture fallback is disabled"
+                    ) from exc
                 fallback_reason = f"LLM unavailable after {type(exc).__name__}; deterministic fixture fallback"
                 failure_telemetry = {
                     "llm_called": True, "model_configured": llm_settings().model,
@@ -219,6 +224,8 @@ class TextToSQLService:
                     **collector.snapshot(),
                 }
         else:
+            if not ALLOW_DETERMINISTIC_LLM_FALLBACK:
+                raise RuntimeError("Text-to-SQL LLM is not configured and deterministic fixture fallback is disabled")
             fallback_reason = "LLM API not configured; deterministic fixture fallback"
             failure_telemetry = {"llm_called": False, "fallback": True}
 
