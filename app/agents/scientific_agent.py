@@ -191,7 +191,7 @@ class ScientificAgent:
         if not rows:
             message = "只读 SQL 查询返回 0 rows；空结果不等价于科学上不存在，也不能支撑确定性结论。"
             state.uncertainties.append(message)
-            state.quality_issues.append(message)
+            state.blocking_issues.append(message)
             return []
         has_error_metric = any(
             any("error" in str(key).lower() or "mae" in str(key).lower() or "rmse" in str(key).lower() for key in row)
@@ -218,7 +218,7 @@ class ScientificAgent:
             if "fused" in state.goal.lower():
                 message = "查询返回的行中没有 fused_ring 分组，不能据此把 fused_ring 覆盖数推断为 0。"
                 state.uncertainties.append(message)
-                state.quality_issues.append(message)
+                state.blocking_issues.append(message)
             return [details]
         fused_count = fused_row.get(
             "sample_count",
@@ -227,7 +227,7 @@ class ScientificAgent:
         if fused_count is None:
             message = "fused_ring 分组缺少样本数/训练覆盖字段。"
             state.uncertainties.append(message)
-            state.quality_issues.append(message)
+            state.blocking_issues.append(message)
             return [details]
         coverage = self._add_evidence(
             state,
@@ -261,7 +261,7 @@ class ScientificAgent:
         if not versions:
             message = "比较数据集版本需要明确两个不同的 train_vN 版本"
             state.uncertainties.append(message)
-            state.quality_issues.append(message)
+            state.blocking_issues.append(message)
             state.final_answer = self._finalize(state)
             yield event("FINAL_ANSWER", "缺少版本", answer=state.final_answer, state=state.model_dump(mode="json"))
             return
@@ -323,7 +323,7 @@ class ScientificAgent:
             yield event("EVIDENCE_ADDED", "已保存原始版本计数", evidence=raw.model_dump())
             comparison, issues = compare_rows(rows, versions)
             state.uncertainties.extend(issues)
-            state.quality_issues.extend(issues)
+            state.blocking_issues.extend(issues)
             if comparison:
                 derived = self._add_evidence(
                     state, "两个数据集版本的结构类型计数差", comparison, "database", selected,
@@ -333,7 +333,7 @@ class ScientificAgent:
         if any(word in state.goal for word in ("数据质量", "缺失率", "重复率", "预测", "误差", "OOD", "分布漂移")):
             message = "当前结构计数查询不足以回答数据质量、预测表现或分布漂移问题"
             state.uncertainties.append(message)
-            state.quality_issues.append(message)
+            state.blocking_issues.append(message)
         state.final_answer = self._finalize(state)
         yield event("FINAL_ANSWER", "数据集比较完成", answer=state.final_answer, state=state.model_dump(mode="json"))
 
@@ -1537,7 +1537,7 @@ class ScientificAgent:
 
     @staticmethod
     def _evidence_quality_issues(state: ScientificAgentState) -> list[str]:
-        issues: list[str] = list(state.quality_issues)
+        issues: list[str] = list(state.blocking_issues)
         for result in state.observations:
             if not result.success and not result.metadata.get("recovered"):
                 issues.append(f"工具执行失败：{result.error or result.source}")
@@ -1601,6 +1601,28 @@ class ScientificAgent:
                 row.get("sample_count", row.get("train_molecule_count")) == 0 for row in database_rows
             ):
                 issues.append("覆盖数为 0 仅是本次查询观测值；未验证查询范围、筛选条件和版本")
+            causal_question = any(
+                token in goal for token in ("导致", "造成", "因为", "原因", "为什么", "cause", "causal")
+            )
+            if state.task_type == "mixed_analysis" and causal_question:
+                has_file_error = any(
+                    item.source_type == "file"
+                    and (
+                        "mae" in item.claim.lower()
+                        or "rmse" in item.claim.lower()
+                        or "误差" in item.claim
+                    )
+                    for item in state.evidence
+                )
+                has_database_coverage = any(
+                    item.source_type == "database"
+                    and ("覆盖" in item.claim or "count" in str(item.value).lower())
+                    for item in state.evidence
+                )
+                if has_file_error and has_database_coverage:
+                    issues.append(
+                        "当前 Evidence 只能支持误差与训练覆盖的并列观察，不能证明训练覆盖导致预测误差差异"
+                    )
         requested_versions = list(re.finditer(r"train[_-]?v\d+", state.goal, flags=re.I))
         if len(requested_versions) == 1:
             requested_version = requested_versions[0]
