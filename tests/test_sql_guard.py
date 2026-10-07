@@ -41,3 +41,37 @@ def test_parameter_binding_requires_exact_non_null_values():
     with pytest.raises(SQLGuardError, match="NULL"):
         guard.validate_bindings(sql, {"version": None})
 
+
+
+def test_schema_guard_rejects_unknown_qualified_column_and_alias():
+    guard = SQLGuard()
+    schema = {
+        "molecules": [
+            {"name": "molecule_id"},
+            {"name": "structure_type"},
+        ]
+    }
+    with pytest.raises(SQLGuardError, match="does not exist"):
+        guard.validate(
+            "SELECT m.bogus FROM molecules AS m",
+            {"molecules"},
+            schema=schema,
+        )
+    with pytest.raises(SQLGuardError, match="unknown table alias"):
+        guard.validate(
+            "SELECT x.structure_type FROM molecules AS m",
+            {"molecules"},
+            schema=schema,
+        )
+
+
+def test_schema_guard_rejects_unknown_unqualified_column_but_allows_projection_alias():
+    guard = SQLGuard()
+    schema = {"molecules": [{"name": "structure_type"}]}
+    with pytest.raises(SQLGuardError, match="does not exist"):
+        guard.validate("SELECT bogus FROM molecules", {"molecules"}, schema=schema)
+    assert guard.validate(
+        "SELECT structure_type AS group_name FROM molecules ORDER BY group_name",
+        {"molecules"},
+        schema=schema,
+    )
