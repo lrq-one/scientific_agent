@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import uuid
 
-from app.config import DEMO_DATA, MAX_REPLANS, MAX_TOOL_CALLS, TASK_TIMEOUT
+from app.config import DEMO_DATA, ENABLE_DEMO_DATA, MAX_REPLANS, MAX_TOOL_CALLS, TASK_TIMEOUT
 from app.agents.planning_graph import build_planning_graph
 from app.agents.planning_policy import PlanningPolicy
 from app.agents.request_router import RequestRouter
@@ -117,9 +117,10 @@ class ScientificAgent:
         materialized = self.storage.materialize(user_id, thread_id, name)
         if materialized is not None:
             return materialized
-        demo_path = (DEMO_DATA / Path(name).name).resolve()
-        if demo_path.exists() and demo_path.parent == DEMO_DATA.resolve():
-            return demo_path
+        if ENABLE_DEMO_DATA:
+            demo_path = (DEMO_DATA / Path(name).name).resolve()
+            if demo_path.exists() and demo_path.parent == DEMO_DATA.resolve():
+                return demo_path
         raise FileNotFoundError(name)
 
     @staticmethod
