@@ -246,6 +246,14 @@ function receive(sourceConversationId, type, data) {
   nextTick(() => timeline.value?.scrollTo({ top: timeline.value.scrollHeight, behavior: 'smooth' }))
 }
 
+async function primaryAction() {
+  if (busy.value) return cancelRunning()
+  if (!query.value.trim() && currentStatus.value === 'failed' && retryableFailedQuery.value) {
+    query.value = retryableFailedQuery.value
+  }
+  return send()
+}
+
 async function send() {
   const text = query.value.trim()
   if (!text || busy.value || !conversationId.value) return
@@ -413,7 +421,7 @@ onUnmounted(() => {
             </div>
           </div>
           <div v-if="!conversationLoading && pendingQuestion" class="hitl"><b>需要补充信息</b><p>{{ pendingQuestion }}</p><div><input v-model="answer" placeholder="输入补充信息…" @keyup.enter="resume"><button @click="resume">继续任务</button><button @click="cancelPending">取消任务</button></div></div>
-          <div class="composer"><textarea v-model="query" rows="3" placeholder="描述你的科研目标…" @keydown.ctrl.enter.prevent="send"></textarea><div class="composer-actions"><div><input ref="fileInput" type="file" accept=".csv,.xlsx,.xls" hidden @change="handleUpload"><button class="attach" @click="fileInput.click()">↑ 上传 CSV / Excel</button><select v-model="datasourceId"><option value="">不指定数据源</option><option v-for="source in resources.authorized_datasources" :key="source">{{ source }}</option></select><span>Ctrl + Enter 发送</span></div><button class="send" :disabled="currentStatus === 'waiting_for_user' || currentStatus === 'cancelling' || (busy && activeTaskId.startsWith('pending:')) || (!busy && !query.trim())" @click="busy ? cancelRunning() : send()">{{ currentStatus === 'waiting_for_user' ? '等待补充信息' : currentStatus === 'cancelling' ? '正在取消…' : busy ? '■ 取消执行' : currentStatus === 'failed' ? '重新分析' : '开始分析' }} <span v-if="!busy && currentStatus !== 'waiting_for_user'">→</span></button></div></div>
+          <div class="composer"><textarea v-model="query" rows="3" placeholder="描述你的科研目标…" @keydown.ctrl.enter.prevent="send"></textarea><div class="composer-actions"><div><input ref="fileInput" type="file" accept=".csv,.xlsx,.xls" hidden @change="handleUpload"><button class="attach" @click="fileInput.click()">↑ 上传 CSV / Excel</button><select v-model="datasourceId"><option value="">不指定数据源</option><option v-for="source in resources.authorized_datasources" :key="source">{{ source }}</option></select><span>Ctrl + Enter 发送</span></div><button class="send" :disabled="currentStatus === 'waiting_for_user' || currentStatus === 'cancelling' || (busy && activeTaskId.startsWith('pending:')) || (!busy && !query.trim() && !(currentStatus === 'failed' && retryableFailedQuery))" @click="primaryAction">{{ currentStatus === 'waiting_for_user' ? '等待补充信息' : currentStatus === 'cancelling' ? '正在取消…' : busy ? '■ 取消执行' : currentStatus === 'failed' ? '重新分析' : '开始分析' }} <span v-if="!busy && currentStatus !== 'waiting_for_user'">→</span></button></div></div>
         </section>
 
         <aside class="progress-panel">
