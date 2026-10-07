@@ -1002,7 +1002,6 @@ class ScientificAgent:
                                     metadata={"error_type": type(exc).__name__, "recovered": True},
                                 )
                                 self._record_tool(state, "plot_metric_comparison", failed)
-                                state.uncertainties.append("图表生成失败；科研分析结果仍保留，未把 Artifact 失败当作科学结论失败。")
                                 yield event(
                                     "RECOVERY_DECISION",
                                     "图表产物生成失败，继续保留已验证 Evidence",
@@ -1029,7 +1028,6 @@ class ScientificAgent:
                                     metadata={"error_type": type(exc).__name__, "recovered": True},
                                 )
                                 self._record_tool(state, "save_result_table", failed)
-                                state.uncertainties.append("结果表产物生成失败；已验证的指标 Evidence 未丢失。")
                                 yield event(
                                     "RECOVERY_DECISION",
                                     "结果表生成失败，继续保留已验证 Evidence",
@@ -1199,11 +1197,11 @@ class ScientificAgent:
                 issues.append(f"工具执行失败：{result.error or result.source}")
         if not state.evidence:
             issues.append("没有可用于回答目标问题的 Evidence")
-        if state.task_type == "database_analysis" and not any(
+        if state.task_type in {"database_analysis", "mixed_analysis"} and not any(
             item.source_type == "database" for item in state.evidence
         ):
             issues.append("数据库任务缺少已保存的数据库 Evidence")
-        if state.task_type == "database_analysis":
+        if state.task_type in {"database_analysis", "mixed_analysis"}:
             database_rows = [
                 row
                 for item in state.evidence
