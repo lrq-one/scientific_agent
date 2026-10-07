@@ -419,6 +419,62 @@ class ConversationRepository:
             ).fetchone()
         return dict(row) if row else None
 
+    def task_by_thread(self, thread_id: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id::text, conversation_id::text, thread_id, status, intent_json,
+                       selected_skills_json, started_at, finished_at
+                FROM tasks WHERE thread_id = %s
+                ORDER BY started_at DESC LIMIT 1
+                """,
+                (thread_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def reconcile_orphaned_tasks(self) -> dict[str, int]:
+        """Fail-safe reconciliation after a FastAPI process restart.
+
+        In-process asyncio workers cannot survive interpreter shutdown. Running
+        tasks are therefore never left pretending to be alive after restart.
+        Waiting HITL tasks remain resumable from PostgreSQL/checkpoint state.
+        """
+        with self.connect() as connection:
+            cancelling = connection.execute(
+                """
+                UPDATE tasks
+                SET status = 'cancelled', finished_at = now()
+                WHERE status = 'cancelling'
+                RETURNING id
+                """
+            ).fetchall()
+            running = connection.execute(
+                """
+                UPDATE tasks
+                SET status = 'failed', finished_at = now()
+                WHERE status = 'running'
+                RETURNING id
+                """
+            ).fetchall()
+            for row in cancelling:
+                connection.execute(
+                    "INSERT INTO task_events (task_id, event_type, payload_json) VALUES (%s, 'CANCELLED', %s)",
+                    (row["id"], Jsonb({
+                        "message": "服务重启时任务处于取消中，已安全终止",
+                        "error_type": "ProcessRestarted",
+                    })),
+                )
+            for row in running:
+                connection.execute(
+                    "INSERT INTO task_events (task_id, event_type, payload_json) VALUES (%s, 'ERROR', %s)",
+                    (row["id"], Jsonb({
+                        "message": "服务重启中断了内存执行器；任务已标记失败，可从原会话重新运行",
+                        "error_type": "ProcessRestarted",
+                        "recoverable": True,
+                    })),
+                )
+        return {"failed_running": len(running), "cancelled_cancelling": len(cancelling)}
+
     def task_status(self, task_id: str, conversation_id: str) -> str | None:
         with self.connect() as connection:
             row = connection.execute(
