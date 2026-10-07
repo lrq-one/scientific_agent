@@ -160,7 +160,7 @@ class ScientificAgent:
             "database",
             source,
             call_id,
-            dataset_version or "synthetic_demo_all_versions",
+            dataset_version,
         )
         fused_row = next(
             (
