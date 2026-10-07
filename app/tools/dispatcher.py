@@ -40,12 +40,14 @@ class ToolDispatcher:
         files: FileAnalysisService,
         mcp: ScientificMCPClient,
         artifacts: ArtifactService,
+        database_factory=DatabaseService,
     ):
         self.workspace = workspace
         self.storage = storage
         self.files = files
         self.mcp = mcp
         self.artifacts = artifacts
+        self.database_factory = database_factory
 
     def _file_path(self, context: ToolExecutionContext, filename: str) -> Path:
         path = self.workspace.safe_file(context.user_id, context.thread_id, filename)
@@ -120,7 +122,7 @@ class ToolDispatcher:
                     metadata={"dispatcher": True},
                 )
             datasource_id = self._datasource(context, args)
-            database = DatabaseService(datasource_id, context.resources.authorized_datasources)
+            database = self.database_factory(datasource_id, context.resources.authorized_datasources)
             if name == "search_schema":
                 return database.search_schema(str(args["query"]))
             if name == "get_table_schema":
