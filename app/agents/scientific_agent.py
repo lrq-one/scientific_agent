@@ -8,6 +8,7 @@ import uuid
 
 from app.config import DEMO_DATA, MAX_REPLANS, MAX_TOOL_CALLS, TASK_TIMEOUT
 from app.agents.planning_graph import build_planning_graph
+from app.agents.planning_policy import PlanningPolicy
 from app.agents.request_router import RequestRouter
 from app.agents.deep_runtime import DeepAgentRuntime
 from app.models.schemas import Capability, Evidence, GroundedClaim, PlanStep, RequestIntent, ResourceSummary, SSEEvent, ScientificAgentState, ToolResult
@@ -61,6 +62,7 @@ class ScientificAgent:
         self.pending: dict[str, dict] = {}
         self.checkpointing = checkpoint_service
         self.planning_graph = build_planning_graph(self.checkpointing.checkpointer)
+        self.planning_policy = PlanningPolicy()
         self.deep_runtime = DeepAgentRuntime(self.checkpointing, self.workspace)
 
     @staticmethod
@@ -749,14 +751,31 @@ class ScientificAgent:
                     return
 
             if intent.need_planning:
+                requested_stages, planning_source, planning_telemetry = await self.planning_policy.select_async(
+                    intent.model_dump(mode="json"),
+                    state.selected_skills,
+                )
                 graph_state = await asyncio.to_thread(
                     self.planning_graph.invoke,
-                    {"intent": intent.model_dump(mode="json"), "plan": [], "plan_version": 0},
+                    {
+                        "intent": intent.model_dump(mode="json"),
+                        "requested_stages": requested_stages,
+                        "plan": [],
+                        "plan_version": 0,
+                    },
                     {"configurable": {"thread_id": f"plan:{thread_id}"}},
                 )
                 state.plan = [PlanStep.model_validate(step) for step in graph_state["plan"]]
                 state.plan_version = graph_state["plan_version"]
-                yield event("PLAN_CREATED", "正在生成分析计划", plan=[p.model_dump() for p in state.plan], max_replans=MAX_REPLANS)
+                yield event(
+                    "PLAN_CREATED",
+                    "已生成受约束的分析计划",
+                    plan=[p.model_dump() for p in state.plan],
+                    requested_stages=requested_stages,
+                    planning_source=planning_source,
+                    llm_telemetry=planning_telemetry,
+                    max_replans=MAX_REPLANS,
+                )
                 yield event("TOOL_STARTED", "正在启动 DeepAgents Runtime", tool="deepagents_runtime")
                 runtime_trace = await self.deep_runtime.run_scaffold(query, user_id, thread_id, state.selected_skills)
                 state.tool_calls.append({"tool_call_id": "runtime-1", "tool": "deepagents_runtime", "success": True})
