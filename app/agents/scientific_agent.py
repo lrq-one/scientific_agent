@@ -1327,6 +1327,8 @@ class ScientificAgent:
                 "INSUFFICIENT_EVIDENCE": "证据不足",
             }.get(state.quality_status, "当前无法形成可靠结论")
             lines = [
+                state.quality_status,
+                "",
                 f"## {heading}",
                 "",
                 "我不能基于当前记录给出确定性科研结论，原因是：",
