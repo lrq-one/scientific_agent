@@ -112,6 +112,32 @@ class ScientificAgent:
         step.status = "completed"
         step.result_summary = summary
 
+    @staticmethod
+    def _append_recovery_step(
+        state: ScientificAgentState,
+        *,
+        goal: str,
+        capability: Capability,
+        tool: str,
+        observation: dict,
+    ) -> tuple[PlanStep | None, list[dict]]:
+        """Append one bounded recovery step and preserve the previous plan snapshot."""
+        original_plan = [step.model_dump(mode="json") for step in state.plan]
+        if state.replan_count >= MAX_REPLANS:
+            return None, original_plan
+        state.replan_count += 1
+        state.plan_version += 1
+        step = PlanStep(
+            step_id=f"recovery-{state.replan_count}-{tool}",
+            goal=goal,
+            required_capabilities=[capability],
+            preferred_tools=[tool],
+            selected_tools=[tool],
+            observations=[observation],
+        )
+        state.plan.append(step)
+        return step, original_plan
+
     def _file_path(self, user_id: str, thread_id: str, name: str) -> Path:
         workspace_path = self.workspace.safe_file(user_id, thread_id, name)
         if workspace_path.exists():
