@@ -80,9 +80,9 @@ class DeepAgentRuntime:
 
     def _model(self):
         settings = llm_settings()
-        # This scaffold only registers context; it does not dispatch science tools.
-        # Keep it deterministic by default so an LLM tool loop cannot block the
-        # LangGraph plan and the actual SQL/file execution path.
+        # DeepAgents is a bounded sub-runtime for skill loading and explicit MCP
+        # enrichment. LangGraph remains the task lifecycle authority. Keep this
+        # deterministic by default so the sub-runtime cannot block the main plan.
         if settings.configured and os.getenv("DEEP_RUNTIME_LLM") == "1":
             from langchain_openai import ChatOpenAI
 
@@ -114,7 +114,12 @@ class DeepAgentRuntime:
         def get_molecule_features(molecule_id: str) -> str:
             """Call the registered scientific MCP server for synthetic molecule metadata."""
             result = asyncio.run(self.mcp.call("get_molecule_features", {"molecule_id": molecule_id}))
-            calls.append({"tool": "mcp:get_molecule_features", "molecule_id": molecule_id, "success": result.success})
+            calls.append({
+                "tool": "mcp:get_molecule_features",
+                "molecule_id": molecule_id,
+                "success": result.success,
+                "result": result.model_dump(mode="json"),
+            })
             return result.model_dump_json()
 
         root = self.workspace.path_for(user_id, thread_id, create=True)
@@ -157,6 +162,6 @@ class DeepAgentRuntime:
             "persistent_checkpoint": self.checkpointing.persistent,
             "tool_calls": calls,
             "result": str(final_message.content),
-            "model_mode": "real_llm_opt_in" if llm_settings().configured and os.getenv("DEEP_RUNTIME_LLM") == "1" else "deterministic_scaffold",
+            "model_mode": "real_llm_opt_in" if llm_settings().configured and os.getenv("DEEP_RUNTIME_LLM") == "1" else "deterministic_bounded_runtime",
         }
 
