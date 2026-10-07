@@ -25,7 +25,7 @@ from app.services.cross_dataset import SQL as CROSS_DATASET_SQL, compare_rows, m
 from app.services.recovery import bounded_transient_retry, classify_failure
 from app.tools.database_tools import DatabaseService
 from app.tools.file_tools import FileAnalysisService
-from app.tools.registry import ToolRegistry
+from app.tools.registry import ToolChoice, ToolRegistry
 from app.tools.dispatcher import ToolDispatcher, ToolExecutionContext
 
 
@@ -60,6 +60,7 @@ class ScientificAgent:
             files=self.files,
             mcp=self.mcp,
             artifacts=self.artifact_service,
+            database_factory=DatabaseService,
         )
         self.pending: dict[str, dict] = {}
         self.checkpointing = checkpoint_service
