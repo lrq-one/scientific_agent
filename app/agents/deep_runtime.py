@@ -112,7 +112,7 @@ class DeepAgentRuntime:
 
         @tool
         def get_molecule_features(molecule_id: str) -> str:
-            """Call the registered scientific MCP server for synthetic molecule metadata."""
+            """Call the registered scientific MCP server for molecule metadata when available."""
             result = asyncio.run(self.mcp.call("get_molecule_features", {"molecule_id": molecule_id}))
             calls.append({
                 "tool": "mcp:get_molecule_features",
