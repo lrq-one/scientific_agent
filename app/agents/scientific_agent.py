@@ -764,11 +764,22 @@ class ScientificAgent:
 
             if intent.task_type in {"file_analysis", "mixed_analysis"}:
                 names = re.findall(r"[\w.-]+\.(?:csv|xlsx|xls)", query, flags=re.I)
-                if not names:
-                    names = [name for name in resources.available_files if name.startswith("model_")]
+                if not names and len(resources.available_files) == 1:
+                    names = [resources.available_files[0]]
                 if not names:
                     self.pending[thread_id] = {"query": query, "user_id": user_id, "datasource_id": datasource_id}
-                    yield event("WAITING_FOR_USER", "等待用户补充信息", question="请上传用于分析的 CSV/Excel 文件。", missing_files=[])
+                    question = (
+                        "当前有多个可用文件，请明确要分析的文件名。"
+                        if resources.available_files
+                        else "请上传用于分析的 CSV/Excel 文件。"
+                    )
+                    yield event(
+                        "WAITING_FOR_USER",
+                        "等待用户补充信息",
+                        question=question,
+                        missing_files=[],
+                        available_files=resources.available_files,
+                    )
                     return
                 missing = [name for name in names if name not in resources.available_files]
                 if missing:
