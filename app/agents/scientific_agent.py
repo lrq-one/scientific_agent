@@ -419,21 +419,24 @@ class ScientificAgent:
         if schema_step:
             yield event("PLAN_STEP_STARTED", "开始检索 Schema 计划步骤", step_id=schema_step.step_id, status="running")
         database = DatabaseService(selected, resources.authorized_datasources)
+        dispatch_context = ToolExecutionContext(
+            user_id=state.user_id,
+            thread_id=state.thread_id,
+            resources=resources,
+            datasource_id=selected,
+        )
         yield event("TOOL_STARTED", "正在检索相关数据库 Schema", tool="search_schema", datasource=selected)
         try:
-            if hasattr(database, "search_schema"):
-                schema_hits = await bounded_transient_retry(
-                    lambda: asyncio.to_thread(database.search_schema, query, 5)
+            schema_hits = await bounded_transient_retry(
+                lambda: self.tool_dispatcher.execute(
+                    ToolChoice(
+                        tool="search_schema",
+                        arguments={"query": query},
+                        reason="current plan step requires schema retrieval",
+                    ),
+                    dispatch_context,
                 )
-            else:
-                raw_schema = await bounded_transient_retry(lambda: asyncio.to_thread(database.schema))
-                hits = self.schema_retriever.search(query, raw_schema.data, [])
-                schema_hits = ToolResult(
-                    success=True,
-                    data=hits,
-                    source=selected,
-                    metadata={"retriever": "bm25", "compatibility_path": True},
-                )
+            )
             if not schema_hits.success or not isinstance(schema_hits.data, list) or not schema_hits.data:
                 raise RuntimeError(schema_hits.error or "schema retrieval returned no candidates")
             schema_map = {
@@ -470,7 +473,16 @@ class ScientificAgent:
         self._record_tool(state, "search_schema", schema)
         yield event("TOOL_FINISHED", "相关 Schema 检索完成", tool="search_schema", result=schema.model_dump())
         try:
-            relationships = await bounded_transient_retry(lambda: asyncio.to_thread(database.relationships))
+            relationships = await bounded_transient_retry(
+                lambda: self.tool_dispatcher.execute(
+                    ToolChoice(
+                        tool="get_table_relationships",
+                        arguments={},
+                        reason="current plan step requires relationship metadata",
+                    ),
+                    dispatch_context,
+                )
+            )
         except Exception as exc:
             decision = classify_failure(exc, tool="get_table_relationships")
             failed = ToolResult(success=False, source=selected, error=str(exc), metadata={"failure_kind": decision.failure_kind})
@@ -632,7 +644,14 @@ class ScientificAgent:
         yield event("TOOL_STARTED", "正在执行只读查询", tool="execute_readonly_sql", datasource=selected)
         try:
             coverage = await bounded_transient_retry(
-                lambda: asyncio.to_thread(database.execute, candidate.sql, candidate.params)
+                lambda: self.tool_dispatcher.execute(
+                    ToolChoice(
+                        tool="execute_readonly_sql",
+                        arguments={"sql": candidate.sql, "params": candidate.params},
+                        reason="validated plan step executes the guarded SQL candidate",
+                    ),
+                    dispatch_context,
+                )
             )
         except Exception as exc:
             decision = classify_failure(exc, tool="execute_readonly_sql")
