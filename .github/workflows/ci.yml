@@ -1,6 +1,9 @@
-name: CI Diagnostic
+name: CI
 
 on:
+  push:
+    branches:
+      - chatgpt/agent-completion-v2
   workflow_dispatch:
 
 jobs:
@@ -18,14 +21,10 @@ jobs:
       - name: Compile
         run: python -m compileall -q app tests
       - name: Test
-        id: backend_tests
-        continue-on-error: true
         env:
           APP_MODE: development
           ENABLE_DEMO_DATA: "true"
         run: pytest -q
-      - name: Report backend test outcome
-        run: echo "backend_tests_outcome=${{ steps.backend_tests.outcome }}"
 
   frontend:
     runs-on: ubuntu-latest
@@ -42,12 +41,6 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
       - name: Frontend tests
-        id: frontend_tests
-        continue-on-error: true
         run: npm test
       - name: Frontend build
-        id: frontend_build
-        continue-on-error: true
         run: npm run build
-      - name: Report frontend outcomes
-        run: echo "frontend_tests=${{ steps.frontend_tests.outcome }} frontend_build=${{ steps.frontend_build.outcome }}"
