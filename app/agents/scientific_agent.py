@@ -1061,13 +1061,40 @@ class ScientificAgent:
                     yield database_event
                 if state.final_answer is not None:
                     return
-                if intent.task_type == "mixed_analysis":
+                if intent.task_type == "mixed_analysis" and any(
+                    step.step_id == "cross-resource-reconcile" for step in state.plan
+                ):
                     join_version = effective_dataset_version
+                    reconcile_step = self._start_plan_step(state, "cross-resource-reconcile")
+                    yield event(
+                        "PLAN_STEP_STARTED",
+                        "开始核对文件与数据库证据",
+                        step_id=reconcile_step.step_id,
+                        status="running",
+                    )
                     if join_version:
                         async for join_event in self._reconcile_file_database(
                             state, resources, target_path, datasource_id, join_version
                         ):
                             yield join_event
+                        self._finish_plan_step(reconcile_step, "已完成文件与版本化数据库的 molecule_id 核对")
+                        yield event(
+                            "PLAN_STEP_FINISHED",
+                            "跨资源核对完成",
+                            step_id=reconcile_step.step_id,
+                            status="completed",
+                        )
+                    else:
+                        reconcile_step.status = "failed"
+                        reconcile_step.error = "dataset_version required for cross-resource reconciliation"
+                        state.uncertainties.append("跨资源核对需要明确 dataset_version；当前未执行跨资源关联。")
+                        yield event(
+                            "PLAN_STEP_FINISHED",
+                            "跨资源核对缺少数据集版本",
+                            step_id=reconcile_step.step_id,
+                            status="failed",
+                            error=reconcile_step.error,
+                        )
 
             if intent.task_type == "general":
                 state.uncertainties.append("未识别到需要调用的已授权资源")
