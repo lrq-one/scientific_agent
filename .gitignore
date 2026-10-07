@@ -4,6 +4,7 @@ __pycache__/
 node_modules/
 web/dist/
 workspace/
+.runtime/
 *.pyc
 *.egg-info/
 .env
