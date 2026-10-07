@@ -605,16 +605,31 @@ class ScientificAgent:
                 for match in re.finditer(r"train[_-]?v\d+", query, re.I)
             ))
             effective_dataset_version = dataset_version or (explicit_versions[0] if len(explicit_versions) == 1 else None)
+            candidate_capabilities = {cap.value for cap in intent.required_capabilities}
+            if self.storage.configured:
+                candidate_capabilities.add("artifact")
+            selected_skills, skill_selection_source, skill_selection_telemetry = await self.skills.select_async(
+                query,
+                intent.task_type,
+                candidate_capabilities,
+            )
             state = ScientificAgentState(
                 user_id=user_id, thread_id=thread_id, goal=query, domain=intent.domain,
                 task_type=intent.task_type, complexity=intent.complexity,
                 available_files=resources.available_files,
                 available_datasources=resources.authorized_datasources,
                 available_models=resources.available_scientific_models,
-                available_tools=[c.value for c in intent.required_capabilities],
-                selected_skills=self.skills.select(query, intent.task_type),
+                available_tools=[cap.value for cap in intent.required_capabilities],
+                selected_skills=selected_skills,
             )
-            yield event("INTENT_RESOLVED", "已识别任务类型", intent=intent.model_dump(mode="json"), selected_skills=state.selected_skills)
+            yield event(
+                "INTENT_RESOLVED",
+                "已识别任务类型",
+                intent=intent.model_dump(mode="json"),
+                selected_skills=state.selected_skills,
+                skill_selection_source=skill_selection_source,
+                skill_llm_telemetry=skill_selection_telemetry,
+            )
 
             first_tool = {
                 "file_analysis": "inspect_table" if intent.complexity == "simple" else "calculate_metrics",
@@ -622,9 +637,6 @@ class ScientificAgent:
                 "database_analysis": "search_schema",
                 "scientific_model": "predict_rt",
             }.get(intent.task_type)
-            candidate_capabilities = {cap.value for cap in intent.required_capabilities}
-            if self.storage.configured:
-                candidate_capabilities.add("artifact")
             candidates = self.tool_registry.candidates(
                 available_capabilities=candidate_capabilities,
                 role="researcher",
