@@ -91,7 +91,7 @@ class DatabaseService:
         self.guard.validate_bindings(sql, params)
         schema = self.schema().data
         dialect = "postgres" if self.backend == "postgres" else "sqlite"
-        safe_sql = self.guard.validate(sql, set(schema), dialect=dialect)
+        safe_sql = self.guard.validate(sql, set(schema), dialect=dialect, schema=schema)
         if self.backend == "postgres":
             self.executor.check(safe_sql, params)
         else:
@@ -109,7 +109,7 @@ class DatabaseService:
         self.guard.validate_bindings(sql, params)
         schema = self.schema().data
         dialect = "postgres" if self.backend == "postgres" else "sqlite"
-        safe_sql = self.guard.validate(sql, set(schema), dialect=dialect)
+        safe_sql = self.guard.validate(sql, set(schema), dialect=dialect, schema=schema)
         if self.backend == "postgres":
             rows = self.executor.execute(safe_sql, params)
             return ToolResult(
