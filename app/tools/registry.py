@@ -178,14 +178,35 @@ class ToolRegistry:
                 valid, _ = self.validate_choice(choice)
                 if choice.tool in {item.name for item in candidates} and valid:
                     return choice, "llm_structured_selection", {**telemetry, "fallback": False}
-                return None, "llm_invalid_or_unauthorized_arguments", {**telemetry, "fallback": True}
-            except Exception:
-                pass
+                telemetry = {**telemetry, "fallback": True, "invalid_choice": choice.model_dump()}
+            except Exception as exc:
+                telemetry = {
+                    "llm_called": True,
+                    "fallback": True,
+                    "error_type": type(exc).__name__,
+                    "latency_ms": round((perf_counter() - started) * 1000, 2),
+                }
+        else:
+            telemetry = {"llm_called": False, "fallback": True}
+
         names = [item.name for item in candidates]
         selected = preferred_tool if preferred_tool in names else names[0]
-        if self.specs[selected].input_schema["required"]:
-            return None, "unbound_arguments", {"llm_called": llm is not None, "fallback": llm is not None}
-        return ToolChoice(tool=selected, arguments={}, reason="deterministic offline fallback"), "deterministic_fallback", {"llm_called": llm is not None, "fallback": llm is not None}
+        required = list(self.specs[selected].input_schema["required"])
+        trusted = argument_context or {}
+        bound = {name: trusted[name] for name in required if name in trusted}
+        optional = self.specs[selected].input_schema.get("properties", {})
+        for name, value in trusted.items():
+            if name in optional and name not in bound:
+                bound[name] = value
+        fallback_choice = ToolChoice(
+            tool=selected,
+            arguments=bound,
+            reason="validated deterministic fallback from trusted runtime context",
+        )
+        valid, error = self.validate_choice(fallback_choice)
+        if not valid:
+            return None, "unbound_arguments", {**telemetry, "binding_error": error}
+        return fallback_choice, "deterministic_fallback", telemetry
 
     def routing_trace(
         self,
