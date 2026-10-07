@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import asyncio
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Sequence
@@ -41,20 +42,21 @@ class DeterministicRuntimeModel(BaseChatModel):
     ) -> ChatResult:
         user_message = next((m.content for m in reversed(messages) if isinstance(m, HumanMessage)), "scientific task")
         if messages and isinstance(messages[-1], ToolMessage):
-            if messages[-1].name == "register_runtime_context" and "fused" in str(user_message).lower():
+            molecule_match = re.search(r"\b((?:M|T)\d{3,})\b", str(user_message), flags=re.I)
+            if messages[-1].name == "register_runtime_context" and molecule_match:
                 response = AIMessage(
                     content="",
                     tool_calls=[
                         {
                             "name": "get_molecule_features",
-                            "args": {"molecule_id": "M004"},
+                            "args": {"molecule_id": molecule_match.group(1).upper()},
                             "id": f"mcp-{uuid.uuid4().hex[:10]}",
                             "type": "tool_call",
                         }
                     ],
                 )
             else:
-                response = AIMessage(content="DeepAgents runtime tools completed; deterministic executor may continue.")
+                response = AIMessage(content="DeepAgents runtime context registered; no explicit molecule_id requires MCP lookup.")
         else:
             response = AIMessage(
                 content="",
