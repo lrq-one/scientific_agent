@@ -28,6 +28,7 @@ from app.services.followup import (
     workflow_query,
 )
 from app.services.resources import ResourceService
+from app.services.runtime_health import runtime_readiness
 from app.services.workspace import WorkspaceError, WorkspaceService
 from app.services.object_storage import ObjectStorageService
 
@@ -109,17 +110,18 @@ def require_conversation(repository, conversation_id: str, user_id: str):
 
 @router.get("/health")
 def health():
+    """Cheap liveness probe: the FastAPI process is alive."""
     return {
         "status": "ok",
         "service": "Scientific Research Analysis Agent",
-        "components": {
-            "database_runtime": "postgres" if os.getenv("DATABASE_URL") else "sqlite_fallback",
-            "object_storage": "minio" if storage.configured else "local_fallback",
-            "checkpoint": "postgres" if agent.checkpointing.persistent else "memory",
-            "mcp": "stdio",
-            "deepagents": "enabled",
-        },
     }
+
+
+@router.get("/ready")
+def ready():
+    """Readiness probe for the services required by real Agent execution."""
+    result = runtime_readiness(storage=storage, checkpointing=agent.checkpointing)
+    return result
 
 
 @router.post("/api/chat/stream")
