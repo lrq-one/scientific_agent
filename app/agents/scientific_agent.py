@@ -729,11 +729,10 @@ class ScientificAgent:
                 "database_analysis": "search_schema",
                 "scientific_model": "predict_rt",
             }.get(intent.task_type)
-            step_filter = (
-                None
-                if intent.task_type == "file_analysis" and intent.complexity == "simple"
-                else [first_tool] if first_tool else None
-            )
+            # The plan step is the hard execution boundary. For a clear first
+            # step, the LLM chooses arguments/reasoning only within that tool
+            # contract instead of widening back to unrelated tools.
+            step_filter = [first_tool] if first_tool else None
             candidates = self.tool_registry.candidates(
                 available_capabilities=candidate_capabilities,
                 role="researcher",

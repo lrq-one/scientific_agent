@@ -27,8 +27,11 @@ async def test_mixed_end_to_end():
     assert any(event.event == "EVIDENCE_ADDED" and "覆盖数" in event.data["evidence"]["claim"] for event in events)
     final = events[-1]
     assert final.event == "FINAL_ANSWER"
-    assert "## 分析结论" in final.data["answer"]
-    assert "**证据**" in final.data["answer"]
+    # The task asks whether low coverage *caused* the fused-ring error. The
+    # synthetic fixture is intentionally too small to support that conclusion;
+    # the quality gate must preserve evidence without overclaiming causality.
+    assert final.data["state"]["quality_status"] == "INSUFFICIENT_EVIDENCE"
+    assert "证据不足" in final.data["answer"]
     assert "synthetic" in final.data["answer"]
 
 
