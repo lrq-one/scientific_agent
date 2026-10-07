@@ -18,6 +18,7 @@ export const createConversation = (title = '新建科研任务') => jsonRequest(
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }),
 })
 export const listConversations = () => jsonRequest('/api/conversations')
+export const getReadiness = () => jsonRequest('/ready')
 export const getConversation = (id, options = {}) => jsonRequest(`/api/conversations/${id}`, options)
 export const getMessages = (id) => jsonRequest(`/api/conversations/${id}/messages`)
 export const renameConversation = (id, title) => jsonRequest(`/api/conversations/${id}`, {
