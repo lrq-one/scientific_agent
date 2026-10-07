@@ -949,23 +949,60 @@ class ScientificAgent:
                                 comparison_step.evidence_ids.append(paired_evidence.evidence_id)
                             yield event("EVIDENCE_ADDED", "已获得配对模型比较证据", evidence=paired_evidence.model_dump())
 
-                    if self.storage.configured and model_results:
-                        chart = self.artifact_service.plot_metric_comparison(
-                            user_id, thread_id, model_results, "metric_comparison.png"
-                        )
-                        chart_result = ToolResult(success=True, data=chart, source=chart["object_key"])
-                        self._record_tool(state, "plot_metric_comparison", chart_result)
-                        state.artifacts.append(chart["object_key"])
-                        yield event("ARTIFACT_CREATED", "已生成模型指标比较图", artifact=chart)
-                        table_rows = [{"model": name, **values} for name, values in model_results.items()]
-                        table = self.artifact_service.save_result_table(
-                            user_id, thread_id, table_rows, "model_metrics.csv", "csv",
-                            required_columns={"model", "mae", "rmse"},
-                        )
-                        table_result = ToolResult(success=True, data=table, source=table["object_key"])
-                        self._record_tool(state, "save_result_table", table_result)
-                        state.artifacts.append(table["object_key"])
-                        yield event("ARTIFACT_CREATED", "已保存模型指标表", artifact=table)
+                    wants_table, wants_chart = self._artifact_preferences(query)
+                    if self.storage.configured and model_results and (wants_table or wants_chart):
+                        if wants_chart:
+                            try:
+                                chart = self.artifact_service.plot_metric_comparison(
+                                    user_id, thread_id, model_results, "metric_comparison.png"
+                                )
+                                chart_result = ToolResult(success=True, data=chart, source=chart["object_key"])
+                                self._record_tool(state, "plot_metric_comparison", chart_result)
+                                state.artifacts.append(chart["object_key"])
+                                yield event("ARTIFACT_CREATED", "已生成模型指标比较图", artifact=chart)
+                            except Exception as exc:
+                                failed = ToolResult(
+                                    success=False,
+                                    source="artifact:metric_comparison.png",
+                                    error=str(exc),
+                                    metadata={"error_type": type(exc).__name__, "recovered": True},
+                                )
+                                self._record_tool(state, "plot_metric_comparison", failed)
+                                state.uncertainties.append("图表生成失败；科研分析结果仍保留，未把 Artifact 失败当作科学结论失败。")
+                                yield event(
+                                    "RECOVERY_DECISION",
+                                    "图表产物生成失败，继续保留已验证 Evidence",
+                                    failure_kind="artifact_failure",
+                                    action="continue_without_artifact",
+                                    reason=str(exc)[:500],
+                                )
+                        if wants_table:
+                            try:
+                                table_rows = [{"model": name, **values} for name, values in model_results.items()]
+                                table = self.artifact_service.save_result_table(
+                                    user_id, thread_id, table_rows, "model_metrics.csv", "csv",
+                                    required_columns={"model", "mae", "rmse"},
+                                )
+                                table_result = ToolResult(success=True, data=table, source=table["object_key"])
+                                self._record_tool(state, "save_result_table", table_result)
+                                state.artifacts.append(table["object_key"])
+                                yield event("ARTIFACT_CREATED", "已保存模型指标表", artifact=table)
+                            except Exception as exc:
+                                failed = ToolResult(
+                                    success=False,
+                                    source="artifact:model_metrics.csv",
+                                    error=str(exc),
+                                    metadata={"error_type": type(exc).__name__, "recovered": True},
+                                )
+                                self._record_tool(state, "save_result_table", failed)
+                                state.uncertainties.append("结果表产物生成失败；已验证的指标 Evidence 未丢失。")
+                                yield event(
+                                    "RECOVERY_DECISION",
+                                    "结果表生成失败，继续保留已验证 Evidence",
+                                    failure_kind="artifact_failure",
+                                    action="continue_without_artifact",
+                                    reason=str(exc)[:500],
+                                )
 
                     if comparison_step:
                         self._finish_plan_step(comparison_step, f"已比较 {len(model_results)} 个模型文件")
