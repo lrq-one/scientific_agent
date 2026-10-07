@@ -959,98 +959,100 @@ class ScientificAgent:
                         self._finish_plan_step(comparison_step, f"已比较 {len(model_results)} 个模型文件")
                         yield event("PLAN_STEP_FINISHED", "计划步骤完成", step_id="file-comparison", status="completed")
 
-                    target_name = names[1] if len(names) > 1 else names[0]
-                    target_path = self._file_path(user_id, thread_id, target_name)
-                    subgroup_step = (
-                        self._start_plan_step(state, "subgroup-analysis")
-                        if any(step.step_id == "subgroup-analysis" for step in state.plan)
-                        else None
-                    )
-                    if subgroup_step:
-                        yield event("PLAN_STEP_STARTED", "开始执行计划步骤", step_id="subgroup-analysis", status="running")
-                    yield event("TOOL_STARTED", "正在分析结构子群", tool="group_metrics", source=target_name)
-                    subgroup = self.files.group_metrics(target_path)
-                    call_id = self._record_tool(state, "group_metrics", subgroup)
-                    if subgroup_step:
-                        subgroup_step.observations.append({"tool": "group_metrics", "success": subgroup.success})
-                    yield event("TOOL_FINISHED", "结构子群分析完成", tool="group_metrics", result=subgroup.model_dump())
-                    if not subgroup.success:
-                        if subgroup_step:
-                            subgroup_step.status = "failed"
-                            subgroup_step.error = subgroup.error
-                        state.final_answer = self._finalize(state)
-                        yield event("FINAL_ANSWER", "分析未完成", answer=state.final_answer, state=state.model_dump(mode="json"))
-                        return
-                    fused = next((row for row in subgroup.data if str(row["structure_type"]).lower() == "fused_ring"), None)
-                    if fused:
-                        evidence = self._add_evidence(
-                            state, f"{target_name} fused_ring MAE", fused["mae"], "file", target_name, call_id,
-                            self._file_dataset_version(target_path),
+                    run_subgroup = any(step.step_id == "subgroup-analysis" for step in state.plan)
+                    if run_subgroup:
+                        target_name = names[1] if len(names) > 1 else names[0]
+                        target_path = self._file_path(user_id, thread_id, target_name)
+                        subgroup_step = (
+                            self._start_plan_step(state, "subgroup-analysis")
+                            if any(step.step_id == "subgroup-analysis" for step in state.plan)
+                            else None
                         )
                         if subgroup_step:
-                            subgroup_step.evidence_ids.append(evidence.evidence_id)
-                        yield event("EVIDENCE_ADDED", "已获得新的科研证据", evidence=evidence.model_dump())
-                    elif "fused" in query.lower():
-                        state.uncertainties.append("文件分析没有返回 fused_ring 结构子群；不能推断其样本量或误差为 0。")
-                    if "mcp" in state.available_tools:
-                        molecule_match = re.search(r"\b((?:M|T)\d{3,})\b", query, flags=re.I)
-                        if molecule_match is None:
-                            state.uncertainties.append(
-                                "任务需要 MCP 分子级信息，但没有明确 molecule_id；为避免误查其他分子，未调用 MCP。"
+                            yield event("PLAN_STEP_STARTED", "开始执行计划步骤", step_id="subgroup-analysis", status="running")
+                        yield event("TOOL_STARTED", "正在分析结构子群", tool="group_metrics", source=target_name)
+                        subgroup = self.files.group_metrics(target_path)
+                        call_id = self._record_tool(state, "group_metrics", subgroup)
+                        if subgroup_step:
+                            subgroup_step.observations.append({"tool": "group_metrics", "success": subgroup.success})
+                        yield event("TOOL_FINISHED", "结构子群分析完成", tool="group_metrics", result=subgroup.model_dump())
+                        if not subgroup.success:
+                            if subgroup_step:
+                                subgroup_step.status = "failed"
+                                subgroup_step.error = subgroup.error
+                            state.final_answer = self._finalize(state)
+                            yield event("FINAL_ANSWER", "分析未完成", answer=state.final_answer, state=state.model_dump(mode="json"))
+                            return
+                        fused = next((row for row in subgroup.data if str(row["structure_type"]).lower() == "fused_ring"), None)
+                        if fused:
+                            evidence = self._add_evidence(
+                                state, f"{target_name} fused_ring MAE", fused["mae"], "file", target_name, call_id,
+                                self._file_dataset_version(target_path),
                             )
-                        else:
-                            molecule_id = molecule_match.group(1).upper()
-                            yield event(
-                                "TOOL_STARTED",
-                                "正在调用 Scientific MCP Tool",
-                                tool="get_molecule_features",
-                                transport="stdio",
-                                molecule_id=molecule_id,
-                            )
-                            molecule = await self.mcp.call("get_molecule_features", {"molecule_id": molecule_id})
-                            mcp_call_id = self._record_tool(state, "mcp:get_molecule_features", molecule)
-                            yield event(
-                                "TOOL_FINISHED",
-                                "MCP 分子特征已返回",
-                                tool="get_molecule_features",
-                                molecule_id=molecule_id,
-                                result=molecule.model_dump(),
-                            )
-                            if molecule.success:
-                                payload = molecule.data.get("result", molecule.data) if isinstance(molecule.data, dict) else {}
-                                structure_type = payload.get("structure_type") if isinstance(payload, dict) else None
-                                mcp_evidence = self._add_evidence(
-                                    state,
-                                    f"{molecule_id} 结构类型",
-                                    structure_type,
-                                    "mcp",
-                                    "mcp:get_molecule_features",
-                                    mcp_call_id,
-                                    None,
+                            if subgroup_step:
+                                subgroup_step.evidence_ids.append(evidence.evidence_id)
+                            yield event("EVIDENCE_ADDED", "已获得新的科研证据", evidence=evidence.model_dump())
+                        elif "fused" in query.lower():
+                            state.uncertainties.append("文件分析没有返回 fused_ring 结构子群；不能推断其样本量或误差为 0。")
+                        if "mcp" in state.available_tools:
+                            molecule_match = re.search(r"\b((?:M|T)\d{3,})\b", query, flags=re.I)
+                            if molecule_match is None:
+                                state.uncertainties.append(
+                                    "任务需要 MCP 分子级信息，但没有明确 molecule_id；为避免误查其他分子，未调用 MCP。"
                                 )
-                                yield event("EVIDENCE_ADDED", "已获得 MCP 科研证据", evidence=mcp_evidence.model_dump())
-                                if subgroup_step:
-                                    subgroup_step.evidence_ids.append(mcp_evidence.evidence_id)
                             else:
-                                decision = classify_failure(molecule.error or "MCP service unavailable", tool="mcp:get_molecule_features")
-                                if decision.action == "alternative_tool" and subgroup.success:
-                                    molecule.metadata["recovered"] = True
-                                    molecule.metadata["alternative_tool"] = "group_metrics"
-                                    state.uncertainties.append(
-                                        f"MCP 分子特征不可用；仅保留文件 group_metrics 子群证据，未验证 {molecule_id} 的单分子结构。"
-                                    )
+                                molecule_id = molecule_match.group(1).upper()
                                 yield event(
-                                    "RECOVERY_DECISION",
-                                    "MCP 不可用，使用已验证的子群统计作为有限替代",
-                                    failure_kind=decision.failure_kind,
-                                    action=decision.action,
-                                    alternative_tool="group_metrics" if decision.action == "alternative_tool" else None,
-                                    reason=decision.reason[:500],
+                                    "TOOL_STARTED",
+                                    "正在调用 Scientific MCP Tool",
+                                    tool="get_molecule_features",
+                                    transport="stdio",
+                                    molecule_id=molecule_id,
                                 )
-                    if subgroup_step:
-                        self._finish_plan_step(subgroup_step, "已完成 structure_type 子群误差计算")
-                        state.current_step += 1
-                        yield event("PLAN_STEP_FINISHED", "计划步骤完成", step_id="subgroup-analysis", status="completed")
+                                molecule = await self.mcp.call("get_molecule_features", {"molecule_id": molecule_id})
+                                mcp_call_id = self._record_tool(state, "mcp:get_molecule_features", molecule)
+                                yield event(
+                                    "TOOL_FINISHED",
+                                    "MCP 分子特征已返回",
+                                    tool="get_molecule_features",
+                                    molecule_id=molecule_id,
+                                    result=molecule.model_dump(),
+                                )
+                                if molecule.success:
+                                    payload = molecule.data.get("result", molecule.data) if isinstance(molecule.data, dict) else {}
+                                    structure_type = payload.get("structure_type") if isinstance(payload, dict) else None
+                                    mcp_evidence = self._add_evidence(
+                                        state,
+                                        f"{molecule_id} 结构类型",
+                                        structure_type,
+                                        "mcp",
+                                        "mcp:get_molecule_features",
+                                        mcp_call_id,
+                                        None,
+                                    )
+                                    yield event("EVIDENCE_ADDED", "已获得 MCP 科研证据", evidence=mcp_evidence.model_dump())
+                                    if subgroup_step:
+                                        subgroup_step.evidence_ids.append(mcp_evidence.evidence_id)
+                                else:
+                                    decision = classify_failure(molecule.error or "MCP service unavailable", tool="mcp:get_molecule_features")
+                                    if decision.action == "alternative_tool" and subgroup.success:
+                                        molecule.metadata["recovered"] = True
+                                        molecule.metadata["alternative_tool"] = "group_metrics"
+                                        state.uncertainties.append(
+                                            f"MCP 分子特征不可用；仅保留文件 group_metrics 子群证据，未验证 {molecule_id} 的单分子结构。"
+                                        )
+                                    yield event(
+                                        "RECOVERY_DECISION",
+                                        "MCP 不可用，使用已验证的子群统计作为有限替代",
+                                        failure_kind=decision.failure_kind,
+                                        action=decision.action,
+                                        alternative_tool="group_metrics" if decision.action == "alternative_tool" else None,
+                                        reason=decision.reason[:500],
+                                    )
+                        if subgroup_step:
+                            self._finish_plan_step(subgroup_step, "已完成 structure_type 子群误差计算")
+                            state.current_step += 1
+                            yield event("PLAN_STEP_FINISHED", "计划步骤完成", step_id="subgroup-analysis", status="completed")
 
             if intent.task_type in {"database_analysis", "mixed_analysis"}:
                 async for database_event in self._run_database_branch(
