@@ -437,9 +437,18 @@ class ScientificAgent:
                 sql_relationships = [relation for relation in relationships.data
                                      if relation.get("source_table") in coverage_tables
                                      and relation.get("target_table") in coverage_tables]
+        primary_skill = next(
+            (name for name in state.selected_skills if name != "scientific_result_summary"),
+            None,
+        )
+        sql_current_step = (
+            "training-coverage"
+            if intent.task_type == "mixed_analysis"
+            else f"skill:{primary_skill}" if primary_skill else "database-analysis"
+        )
         candidate, generation = await bounded_transient_retry(lambda: self.text2sql.generate(
             goal=sql_goal,
-            current_step="training-coverage",
+            current_step=sql_current_step,
             datasource=selected,
             full_schema=sql_schema,
             relationships=sql_relationships,
