@@ -29,6 +29,12 @@ def classify_failure(error: Exception | str, *, tool: str) -> RecoveryDecision:
     sqlstate = getattr(error, "sqlstate", None)
     if isinstance(error, SQLGuardError) and "table not authorized" in text and tool == "query_checker":
         return RecoveryDecision(failure_kind="schema_mismatch", action="replan", reason=str(error))
+    if any(token in text for token in ("missing columns", "unknown group column", "join key not found")):
+        return RecoveryDecision(
+            failure_kind="schema_mismatch",
+            action="alternative_tool",
+            reason=str(error),
+        )
     if sqlstate in {"42501"} or any(token in text for token in ("permission denied", "not authorized", "forbidden")):
         return RecoveryDecision(failure_kind="permission_denied", action="fail_safely", reason=str(error))
     if sqlstate in {"42703", "42P01"} or any(token in text for token in ("column", "alias", "does not exist", "unknown table")):
