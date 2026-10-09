@@ -16,3 +16,7 @@ Command result: `13 passed` covering the four infrastructure modules and the eig
 | CANCEL | waiting and running cancellation reach terminal `cancelled`; late completion is rejected and CANCELLED events remain persisted |
 
 The D09 runtime fix is limited to `app/agents/runtime.py:534-552`: a successful SQL tool may repeat only for a different trusted population; the same population and unplanned execution remain non-repeatable. This removes the false duplicate suppression without permitting loops.
+
+## Execution-efficiency ledger
+
+The fixed-provider traces retain every audit event. In the final isolated runs: D09 used 1 `REPLAN`, 2 scripted decision turns and 7 tool calls; M02 used 1 `REPLAN`, 5 decision turns and 5 tool calls; D08 used 1 `REPLAN`, 3 decision turns and 5 tool calls; B used 0 replans, 2 decision turns and 4 tool calls; C used 0 replans, 2 decision turns and 5 tool calls (the second Text2SQL call is the bounded directed repair). All final traces had 0 invalid ToolCalls. The historical C trace had one invalid Query Checker attempt, one overall replan and one no-progress replan; that behavior is covered by the C regression and is not hidden by deleting events.
