@@ -5,6 +5,8 @@ succeeded. Keep the existing completed/failed storage contract.
 """
 from __future__ import annotations
 
+RUNTIME_PROTOCOL_VERSION = "2026-10-09-plan-schema-and-task-coverage-v1"
+
 UNSUCCESSFUL_QUALITY = frozenset({
     "EXECUTION_FAILED", "INSUFFICIENT_EVIDENCE", "CONFLICTING_EVIDENCE",
 })
