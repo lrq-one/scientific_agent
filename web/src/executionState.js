@@ -17,6 +17,14 @@ export function hydrateConversationTasks(taskExecutions, conversationActiveTask,
   else delete conversationActiveTask[conversationId]
 }
 
+function finalAnswerTaskStatus(data) {
+  const state = data.state || {}
+  if (['EXECUTION_FAILED', 'INSUFFICIENT_EVIDENCE', 'CONFLICTING_EVIDENCE'].includes(state.quality_status)) return 'failed'
+  if (state.quality_status === 'NO_DATA') return 'completed'
+  if (['PARTIAL', 'UNSATISFIED', 'UNVERIFIABLE'].includes(state.goal_coverage?.status)) return 'failed'
+  return 'completed'
+}
+
 export function recordTaskEvent(taskExecutions, conversationActiveTask, conversationId, type, data) {
   const taskId = data.task_id || conversationActiveTask[conversationId]
   if (!taskId) return
@@ -24,7 +32,7 @@ export function recordTaskEvent(taskExecutions, conversationActiveTask, conversa
   const status = type === 'WAITING_FOR_USER' ? 'waiting_for_user'
     : type === 'CANCELLING' ? 'cancelling'
     : type === 'CANCELLED' ? 'cancelled'
-    : type === 'FINAL_ANSWER' ? 'completed'
+    : type === 'FINAL_ANSWER' ? finalAnswerTaskStatus(data)
     : type === 'ERROR' ? 'failed' : 'running'
   taskExecutions[taskId] = {
     ...previous, conversation_id: conversationId, task_id: taskId,
