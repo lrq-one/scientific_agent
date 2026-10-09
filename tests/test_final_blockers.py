@@ -15,6 +15,7 @@ from app.tools.registry import ToolChoice
 from app.models.schemas import ResourceSummary
 from app.agents.runtime import DecisionRuntime
 from app.models.schemas import AgentDecision
+from app.agents.decision_node import eligible_call_tools
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = {"predictions": [{"name": "model_run_id"}, {"name": "molecule_id"}],
@@ -136,7 +137,14 @@ def test_d06_uses_original_split_dimension_not_a_substitute_structure_metric():
 
 
 @pytest.mark.parametrize("case", ["D09", "D06"])
-def test_fresh_trace_uncallable_initial_plan_is_rejected_atomically(case):
+def test_fresh_trace_uncallable_initial_plan_gets_reachable_schema_prerequisite(case):
+    """The Runtime now compiles the prerequisite instead of wasting a replan.
+
+    The historical assertion expected atomic rejection.  That became stale
+    when the trusted runtime learned to add an authorised schema producer.  A
+    stronger contract is that the repaired plan has a genuinely callable
+    entrypoint and every text_to_sql step depends on it.
+    """
     record = json.loads((ROOT / f"reports/phase4a_final_blocker_resolution_20261009/ui/blocker-{case}.json").read_text(encoding="utf-8"))
     turn = record["turns"][0]
     final = ScientificAgentState.model_validate([event["payload_json"]["state"] for event in turn["events"] if event["event_type"] == "FINAL_ANSWER"][-1])
@@ -144,9 +152,18 @@ def test_fresh_trace_uncallable_initial_plan_is_rejected_atomically(case):
     final.plan, final.plan_id, final.schema_cache = [], None, {}
     run = DecisionRuntime.__new__(DecisionRuntime)
     run.owner = SimpleNamespace()
-    with pytest.raises(ValueError, match="schema|entrypoint"):
-        run._apply_plan(final, proposal, {})
-    assert final.plan == [] and final.plan_id is None and not final.schema_cache
+    run._emit = lambda *args, **kwargs: None
+    run._apply_plan(final, proposal, {})
+    schema_steps = [step for step in final.plan
+                    if {"search_schema", "get_table_schema"} & set(step.selected_tools)]
+    entry_steps = [step for step in schema_steps if not step.depends_on]
+    assert len(entry_steps) == 1
+    schema_step = entry_steps[0]
+    assert set(eligible_call_tools(final)) & {"search_schema", "get_table_schema"}
+    assert "text_to_sql" not in eligible_call_tools(final)
+    assert all(schema_step.step_id in step.depends_on for step in final.plan
+               if "text_to_sql" in step.selected_tools)
+    assert final.plan_id and not final.schema_cache
 
 
 def test_actual_mixed_file_comparison_satisfies_error_metric_presence_without_db_mae():

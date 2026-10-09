@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from app.agents.goal_coverage import assess_goal_coverage, _explicit_csv_export_requested
-from app.models.schemas import ScientificAgentState, ToolResult
+from app.models.schemas import Capability, Evidence, PlanStep, ResourceBinding, ScientificAgentState, ToolResult
 from app.services.task_completion import scientific_task_status, RUNTIME_PROTOCOL_VERSION
 
 
@@ -90,3 +90,69 @@ def test_csv_name_without_confirmed_uploaded_artifact_does_not_count():
         success=True, source="minio", data={"artifact_type": "csv", "artifact_id": "not-persisted"},
     ))
     assert "csv_export" in assess_goal_coverage(state).missing_deliverables
+
+
+def test_discovered_database_does_not_create_phantom_deliverable_for_file_only_goal():
+    """Replays the completion contract of the persisted model_v1/v2 failure.
+
+    Merely discovering training_db next to the two named files must not turn a
+    completed file comparison into an unrequested mixed analysis.
+    """
+    state = ScientificAgentState(
+        user_id="unit", thread_id="unit",
+        goal="比较 model_v1.csv 和 model_v2.csv，并按 structure_type 分析高误差样本",
+        user_request="比较 model_v1.csv 和 model_v2.csv，并按 structure_type 分析高误差样本",
+        requested_dimensions=["structure_type"],
+        required_deliverables=["file_analysis"],
+        resource_binding=ResourceBinding(
+            datasource_id="training_db", files=["model_v1.csv", "model_v2.csv"],
+            ambiguous_fields=["dataset_version"],
+        ),
+        plan=[PlanStep(
+            step_id="1", goal="compare named files by structure type",
+            selected_tools=["compare_structure_groups"],
+            required_capabilities=[Capability.FILE],
+        )],
+        tool_calls=[{"tool": "compare_structure_groups", "tool_call_id": "file-1"}],
+        observations=[ToolResult(success=True, source="model_v2.csv", data={
+            "subgroups": [{"structure_type": "fused_ring", "mae": 2.4}],
+        })],
+        evidence=[Evidence(
+            evidence_id="ev-file-1", claim="grouped file errors",
+            value={"subgroups": [{"structure_type": "fused_ring", "mae": 2.4}]},
+            source_type="file", source="model_v2.csv", tool_call_id="file-1",
+        )],
+    )
+    coverage = assess_goal_coverage(state)
+    assert coverage.status == "SATISFIED"
+    assert coverage.missing_deliverables == []
+    assert scientific_task_status({"state": {
+        "quality_status": "SUPPORTED_CONCLUSION",
+        "goal_coverage": coverage.model_dump(mode="json"),
+    }}) == "completed"
+
+
+def test_real_mixed_plan_still_requires_executed_database_analysis():
+    """Counterfactual: removing the real DB execution must still fail."""
+    state = ScientificAgentState(
+        user_id="unit", thread_id="unit", goal="联合比较文件误差与数据库训练覆盖",
+        required_deliverables=["file_analysis", "database_analysis"],
+        resource_binding=ResourceBinding(
+            datasource_id="training_db", files=["model_v2.csv"],
+        ),
+        plan=[
+            PlanStep(step_id="1", goal="file error", selected_tools=["compare_models"],
+                     required_capabilities=[Capability.FILE]),
+            PlanStep(step_id="2", goal="database coverage", selected_tools=["execute_readonly_sql"],
+                     required_capabilities=[Capability.DATABASE]),
+        ],
+        tool_calls=[{"tool": "compare_models", "tool_call_id": "file-1"}],
+        observations=[ToolResult(success=True, source="model_v2.csv", data={"mae": 0.725})],
+        evidence=[Evidence(
+            evidence_id="ev-file-1", claim="file metrics", value={"mae": 0.725},
+            source_type="file", source="model_v2.csv", tool_call_id="file-1",
+        )],
+    )
+    coverage = assess_goal_coverage(state)
+    assert coverage.status == "PARTIAL"
+    assert coverage.missing_deliverables == ["executed_database_analysis"]

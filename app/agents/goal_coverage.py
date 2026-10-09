@@ -131,8 +131,13 @@ def assess_goal_coverage(state, *, non_empirical: bool = False) -> GoalCoverage:
     required_capabilities = {cap.value for step in state.plan for cap in step.required_capabilities}
     required_capabilities.update(item.removesuffix("_analysis") for item in state.required_deliverables
                                  if item.endswith("_analysis"))
-    if state.resource_binding.datasource_id and state.resource_binding.files:
-        required_capabilities.update({"database", "file"})
+    # ResourceBinding describes authorised resources that were discovered, not
+    # work the user requested.  A file-only question may legitimately bind the
+    # named files while metadata discovery also records an available datasource.
+    # Turning that coexistence into a mixed-analysis requirement creates a
+    # phantom database deliverable after the file evidence already answered the
+    # goal.  Required work comes only from the installed plan and the immutable
+    # deliverable contract captured from the original request.
     if "database" in required_capabilities and not executed_sql:
         missing_deliverables.append("executed_database_analysis")
     if state.datasource_id and executed_sql and any(result.source != state.datasource_id for result in executed_sql):
