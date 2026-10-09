@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import threading
@@ -24,11 +25,12 @@ from app.agents.plan_protocol import (prepare_replacement, plan_action_signature
                                       satisfied, condition_for, retain_verified_prerequisites,
                                       ensure_sql_schema_entrypoint)
 from app.agents.goal_coverage import assess_goal_coverage
-from app.services.query_scope import UnverifiedScope, validate_scope
+from app.services.query_scope import ScopeViolation, UnverifiedScope, validate_scope
 from app.services.database_errors import is_database_storage_corruption
 
 
 NO_PROGRESS_REPLAN_LIMIT = 2
+SCOPE_REPAIR_LIMIT = 1
 
 
 class DecisionRuntime:
@@ -236,6 +238,10 @@ class DecisionRuntime:
             missing = missing_population_coverage(state, executed) if state.populations or state.requires_population_binding or executed else []
             if missing:
                 raise ValueError(f'QueryScope executed populations incomplete: {missing}; retain verified results and complete only missing scope')
+        if decision.action == "CALL_TOOL" and decision.tool_name == "query_checker":
+            from app.agents.decision_node import eligible_call_tools
+            if "query_checker" not in eligible_call_tools(state):
+                raise ValueError("query_checker requires a trusted SQLCandidate or a legal historical/user SQL source; failed Text2SQL candidates are diagnostic-only")
         if not state.plan:
             # Only REPLAN installs a plan. IDs in an undeployed/echoed plan
             # cannot create workflow steps or overwrite tool observations.
@@ -297,6 +303,133 @@ class DecisionRuntime:
                 "available_schema_tools": [t for t in callable_tools if t in {"search_schema", "get_table_schema"}],
                 "recovery": "Use an actually callable schema tool, or repair plan dependencies/tool scope; retain the installed plan and verified observations"}
 
+    @staticmethod
+    def _scope_failure_context_key(state, call, result):
+        """Stable identity for one candidate/scope recovery context.
+
+        The key deliberately excludes plan prose and the natural-language
+        rewrite.  A changed candidate, params, population or QueryScope gets
+        an independent budget; repeating the same failed context does not.
+        """
+        candidate = result.metadata.get("sql_candidate") or {}
+        validation = result.metadata.get("scope_validation") or {}
+        arguments = call.get("arguments") or {}
+        candidate_sql = candidate["sql"] if "sql" in candidate else arguments.get("sql")
+        candidate_params = candidate["params"] if "params" in candidate else arguments.get("params") or {}
+        payload = {
+            "candidate": {
+                "sql": candidate_sql,
+                "params": candidate_params,
+            },
+            "query_scope": call.get("query_scope") or state.query_scope.model_dump(mode="json"),
+            "population_id": call.get("population_id"),
+            "failure_code": result.failure_code,
+            "failure_reason": validation.get("reason") or result.error,
+        }
+        encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()[:24]
+
+    @staticmethod
+    def _scope_failures(state):
+        failures = []
+        for call, result in zip(state.tool_calls, state.observations):
+            if (call.get("tool") == "text_to_sql" and not result.success
+                    and result.failure_code == "UNVERIFIED_SCOPE"):
+                failures.append((call, result, DecisionRuntime._scope_failure_context_key(state, call, result)))
+        return failures
+
+    @staticmethod
+    def _sql_repair_feedback(state, scope=None):
+        """Bounded repair context; failed candidates remain diagnostic-only."""
+        failures = DecisionRuntime._scope_failures(state)[-2:]
+        if not failures:
+            return None
+        return json.dumps({
+            "failure_code": "UNVERIFIED_SCOPE",
+            "candidate_status": "diagnostic_only",
+            "failures": [{
+                "candidate": result.metadata.get("sql_candidate"),
+                "scope_validation": result.metadata.get("scope_validation"),
+                "error": result.error,
+                "recovery": result.metadata.get("recovery"),
+                "tool_call_id": call.get("tool_call_id"),
+                "recovery_context_key": context_key,
+            } for call, result, context_key in failures],
+            "query_scope": (scope or state.query_scope).model_dump(mode="json"),
+            "resource_binding": state.resource_binding.model_dump(mode="json"),
+            "relationships": state.relationships_cache,
+            "instruction": (
+                "Perform one targeted SQL repair using the diagnostic candidate and the authoritative QueryScope. "
+                "Prefer independent simple SELECTs for prediction errors and training coverage; do not combine "
+                "unrelated populations with LEFT JOIN, do not drop scope predicates, and do not treat the "
+                "diagnostic candidate as a trusted SQLCandidate."
+            ),
+        }, ensure_ascii=False, default=str)
+
+    def _directed_scope_recovery(self, state, config):
+        """Route one scope failure to Text2SQL repair, then stop deterministically."""
+        failures = self._scope_failures(state)
+        if not failures or not state.observations:
+            return None
+        last_call, last_result = state.tool_calls[-1], state.observations[-1]
+        if last_call.get("tool") != "text_to_sql" or last_result.failure_code != "UNVERIFIED_SCOPE":
+            return None
+        last_context_key = self._scope_failure_context_key(state, last_call, last_result)
+        context_failures = [item for item in failures if item[2] == last_context_key]
+        repair_attempt = len(context_failures)
+        from app.models.schemas import QueryScope
+        repair_scope = QueryScope.model_validate(last_call.get("query_scope") or state.query_scope.model_dump(mode="json"))
+
+        from app.agents.decision_node import eligible_call_tools
+        if repair_attempt <= SCOPE_REPAIR_LIMIT and "text_to_sql" in eligible_call_tools(state):
+            step_id = last_call.get("step_id") if state.plan else None
+            population_id = last_call.get("population_id")
+            decision = AgentDecision(
+                action="CALL_TOOL", tool_name="text_to_sql", step_id=step_id,
+                population_id=population_id,
+                tool_arguments={"goal": state.goal, "repair_feedback": self._sql_repair_feedback(state, repair_scope)},
+                reason_summary="UNVERIFIED_SCOPE: perform one bounded SQL repair using the recorded candidate, error, QueryScope and relationships",
+            )
+            telemetry = {"llm_called": False, "decision_source": "deterministic_scope_recovery",
+                         "repair_attempt": repair_attempt, "repair_limit": SCOPE_REPAIR_LIMIT,
+                         "recovery_context_key": last_context_key}
+            state.control_observations.append({
+                "action": "SCOPE_REPAIR", "success": True, "failure_code": "UNVERIFIED_SCOPE",
+                "repair_attempt": repair_attempt, "repair_limit": SCOPE_REPAIR_LIMIT,
+                "recovery_context_key": last_context_key,
+                "candidate_status": "diagnostic_only",
+                "query_scope": repair_scope.model_dump(mode="json"),
+                "tool_name": "text_to_sql",
+            })
+            self._emit(config, "RECOVERY_DECISION", "UNVERIFIED_SCOPE 已转为有界 SQL 定向修复",
+                       failure_code="UNVERIFIED_SCOPE", repair_attempt=repair_attempt,
+                       repair_limit=SCOPE_REPAIR_LIMIT, candidate_status="diagnostic_only",
+                       recovery_context_key=last_context_key,
+                       query_scope=repair_scope.model_dump(mode="json"),
+                       relationships=state.relationships_cache)
+            return decision, telemetry
+
+        if repair_attempt > SCOPE_REPAIR_LIMIT:
+            decision = AgentDecision(
+                action="FINISH",
+                reason_summary="UNVERIFIED_SCOPE 定向修复预算已耗尽；保留诊断候选和范围证据，停止重建相同 Plan",
+            )
+            telemetry = {"llm_called": False, "decision_source": "deterministic_scope_recovery",
+                         "repair_attempt": repair_attempt, "repair_limit": SCOPE_REPAIR_LIMIT,
+                         "recovery_context_key": last_context_key, "terminal": True}
+            state.control_observations.append({
+                "action": "SCOPE_REPAIR_STOP", "success": False, "failure_code": "UNVERIFIED_SCOPE",
+                "repair_attempt": repair_attempt, "repair_limit": SCOPE_REPAIR_LIMIT,
+                "recovery_context_key": last_context_key,
+                "candidate_status": "diagnostic_only",
+            })
+            self._emit(config, "RECOVERY_DECISION", "UNVERIFIED_SCOPE 定向修复预算耗尽，停止重复 Plan",
+                       failure_code="UNVERIFIED_SCOPE", repair_attempt=repair_attempt,
+                       repair_limit=SCOPE_REPAIR_LIMIT, candidate_status="diagnostic_only",
+                       recovery_context_key=last_context_key)
+            return decision, telemetry
+        return None
+
     def decision(self, values, config: RunnableConfig):
         self._check(config)
         state = self._state(values)
@@ -316,9 +449,13 @@ class DecisionRuntime:
             state.decision = AgentDecision(action="FINISH", reason_summary="runtime limit reached")
             return self._return(state)
         try:
-            tools = [self.owner.tool_registry.specs[name].model_dump() for name in state.allowed_tools]
-            decision, telemetry = self._await(self.decider.decide(state, tools, self.owner.skills.execution_context(state.selected_skills)), config)
-            self._check(config)
+            directed = self._directed_scope_recovery(state, config)
+            if directed is not None:
+                decision, telemetry = directed
+            else:
+                tools = [self.owner.tool_registry.specs[name].model_dump() for name in state.allowed_tools]
+                decision, telemetry = self._await(self.decider.decide(state, tools, self.owner.skills.execution_context(state.selected_skills)), config)
+                self._check(config)
             state.decision_telemetry = telemetry
             state.decision = decision
             if decision.population_requests:
@@ -432,23 +569,13 @@ class DecisionRuntime:
         if state.decision.tool_name in {"query_checker", "execute_readonly_sql"}:
             population_id, scope = self._tool_scope(state)
             sql = str(args.get("sql", ""))
-            normalize = lambda text: re.sub(r"\s+", " ", str(text)).strip().rstrip(";")
-            candidates = [result.data.get("sql") for call, result in zip(state.tool_calls, state.observations)
-                          if call["tool"] == "text_to_sql" and result.success and isinstance(result.data, dict)
-                          and (not state.populations or result.metadata.get("population_id") == population_id)
-                          and (result.data.get("params") or {}) == (args.get("params") or {})]
-            provenance = state.conversation_context.get("previous_provenance") or {}
-            previous = provenance.get("sql_candidate") or {}
+            from app.services.sql_candidate import normalize_sql, trusted_sql_candidates, user_supplied_sql
             params = args.get("params") or {}
             if scope.dataset_version and "dataset_version" in params and params["dataset_version"] != scope.dataset_version:
                 raise ValueError("SQL params do not bind the requested dataset_version")
-            previous_scope_matches = (not state.dataset_version or provenance.get("dataset_version") == state.dataset_version or
-                                      ("%(dataset_version)s" in previous.get("sql", "") and params.get("dataset_version") == state.dataset_version))
-            if previous.get("sql") and previous_scope_matches:
-                candidates.append(previous["sql"])
-            user_provided = normalize(sql) and normalize(sql) in normalize(state.user_request or state.goal)
-            if not user_provided and not any(normalize(sql) == normalize(candidate) for candidate in candidates):
-                raise ValueError("New SQL has no SQLCandidate lineage. Retrieve authorized schema and use text_to_sql; check/execute its exact SQL and params via input_refs. Historical or explicitly user-supplied SQL may be reused")
+            candidates = trusted_sql_candidates(state, population_id=population_id, params=params)
+            if not user_supplied_sql(state, sql) and not any(normalize_sql(sql) == normalize_sql(candidate) for candidate in candidates):
+                raise ValueError("New SQL has no trusted SQLCandidate lineage; failed Text2SQL candidates are diagnostic-only. Retrieve authorized schema and use text_to_sql; check/execute its exact SQL and params via input_refs. Historical or explicitly user-supplied SQL may be reused")
             if state.grounding_ready:
                 validate_scope(sql, params, scope, state.schema_cache)
         if state.decision.tool_name in {"save_result_table", "compare_structure_groups"}:
@@ -502,14 +629,7 @@ class DecisionRuntime:
                 schema_cache=state.schema_cache, relationships_cache=state.relationships_cache,
                 dataset_version=scope.dataset_version, skill_context=self.owner.skills.execution_context(state.selected_skills),
                 original_goal=state.goal, query_scope=scope, population_id=population_id, resource_binding=binding,
-                sql_repair_feedback=json.dumps([
-                    {"candidate": result.metadata.get("sql_candidate"),
-                     "validation": result.metadata.get("scope_validation"), "error": result.error,
-                     "recovery": result.metadata.get("recovery"), "call_id": call["tool_call_id"]}
-                    for call, result in list(zip(state.tool_calls, state.observations))[-4:]
-                    if call["tool"] == "text_to_sql" and not result.success], ensure_ascii=False) if any(
-                        call["tool"] == "text_to_sql" and not result.success
-                        for call, result in list(zip(state.tool_calls, state.observations))[-4:]) else None,
+                 sql_repair_feedback=self._sql_repair_feedback(state, scope),
                 analysis_context={"original_question": state.user_request or state.goal,
                     "current_outcome": step.goal if state.plan else state.goal,
                     "successful_observations": [{"tool": call["tool"], "data": bounded(result.data),
@@ -531,7 +651,8 @@ class DecisionRuntime:
                 success=False, source=name or "unknown", error=f"{type(exc).__name__}: {message[:300]}",
                 outcome="EXECUTION_FAILED" if corrupted_storage else outcome,
                 failure_code=("DATABASE_STORAGE_CORRUPTION" if corrupted_storage else
-                              "UNVERIFIED_SCOPE" if isinstance(exc, UnverifiedScope) else outcome),
+                              "UNVERIFIED_SCOPE" if isinstance(exc, UnverifiedScope) else
+                              "SCOPE_VIOLATION" if isinstance(exc, ScopeViolation) else outcome),
                 failed_stage="datasource_storage" if corrupted_storage else "tool_execution",
                 recoverable=False if corrupted_storage else isinstance(exc, (ValueError, TimeoutError)),
                 exception_type=type(exc).__name__,
@@ -567,6 +688,12 @@ class DecisionRuntime:
                 "failure_code": result.failure_code, "failed_stage": result.failed_stage,
                 "recoverable": result.recoverable, "plan_id": state.plan_id, "tool_name": name,
                 "exception_type": result.exception_type, "reason_summary": result.reason_summary,
+                "recovery_action": ("targeted_sql_repair" if result.failure_code == "UNVERIFIED_SCOPE" else
+                                    "reject_scope_violation" if result.failure_code == "SCOPE_VIOLATION" else
+                                    "repair_arguments_or_stop" if result.failure_code == "INVALID_ARGUMENT" else
+                                    "stop_storage_retry" if result.failure_code == "DATABASE_STORAGE_CORRUPTION" else
+                                    "bounded_retry" if result.recoverable else "stop"),
+                "retry_budget": (SCOPE_REPAIR_LIMIT if result.failure_code == "UNVERIFIED_SCOPE" else 0),
                 "retry_count": sum(1 for call, prior in zip(state.tool_calls, state.observations)
                                    if call.get("tool") == name and not prior.success),
                 "replan_count": state.replan_count,

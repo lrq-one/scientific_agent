@@ -14,6 +14,13 @@ class UnverifiedScope(ValueError):
         super().__init__("UNVERIFIED_SCOPE: " + reason)
 
 
+class ScopeViolation(ValueError):
+    """The SQL provably contradicts an authorized QueryScope."""
+
+    def __init__(self, reason):
+        super().__init__("SCOPE_VIOLATION: " + reason)
+
+
 def validate_scope(sql, params, scope: QueryScope, schema):
     if not any((scope.dataset_version, scope.split, scope.whole_dataset, scope.comparison_target, scope.all_versions, scope.filters)):
         return {"verified": True, "query_scope": scope.model_dump(mode="json"),
@@ -75,7 +82,7 @@ def validate_scope(sql, params, scope: QueryScope, schema):
                 expected = set(scope.authorized_version_ids if column.name in {"id", "dataset_version_id"}
                                else scope.authorized_version_labels)
                 if not expected or any(v is None for v in bound) or set(map(str, bound)) != expected:
-                    raise ValueError("All-version population must bind exactly the authorized version set")
+                    raise ScopeViolation("All-version population must bind exactly the authorized version set")
                 all_version_predicates.append((table, column.name, node, s))
                 version_scopes.add(id(s.expression))
             if (table == 'model_runs' and column.name in {'id', 'run_name'}) or (table == 'predictions' and column.name == 'model_run_id'):
@@ -150,7 +157,7 @@ def validate_scope(sql, params, scope: QueryScope, schema):
             if node.find_ancestor(exp.Case, exp.Filter): continue
             typ = next((str(c.get("type", "")).lower() for c in schema.get(table, []) if c["name"] == col), "")
             if "uuid" in typ and bound == scope.dataset_version:
-                raise ValueError("QueryScope version label was bound to a UUID column; use the metadata ID or join the version label table")
+                raise ScopeViolation("QueryScope version label was bound to a UUID column; use the metadata ID or join the version label table")
             is_version = col in {"dataset_version", "dataset_version_id"} or (
                 table == "dataset_versions" and col in {"id", "version", "version_name", "label"})
             if is_version and str(bound) in values:
@@ -163,11 +170,11 @@ def validate_scope(sql, params, scope: QueryScope, schema):
                 if bool(bound) and all(v is not None for v in bound) and set(map(str,bound)) == (labels if col=='run_name' else ids) and bool(ids):
                     good = True
                     version_scopes.add(id(s.expression))
-        if not good: raise ValueError("QueryScope missing requested dataset version predicate")
+        if not good: raise ScopeViolation("QueryScope missing requested dataset version predicate")
     if scope.split:
         if not any(col == "split" and bound == scope.split and not node.find_ancestor(exp.Case, exp.Filter)
                    for _, col, bound, node in predicates):
-            raise ValueError(f"QueryScope missing population split={scope.split!r}; EXPLAIN/SQL success is insufficient")
+            raise ScopeViolation(f"QueryScope missing population split={scope.split!r}; EXPLAIN/SQL success is insufficient")
     split_values = {bound for _, col, bound, _ in predicates if col == 'split' and bound in {'train','validation','test'}}
     population_splits = {bound for _, col, bound, node in predicates if col == 'split' and not node.find_ancestor(exp.Case, exp.Filter)}
     def is_population(table):
@@ -190,7 +197,7 @@ def validate_scope(sql, params, scope: QueryScope, schema):
             bound = source_is_version_bound(population,set())
             if not bound:
                 tables = sorted(t.name for t in population.sources.values() if isinstance(t,exp.Table))
-                raise ValueError(f"QueryScope population branch {tables} lacks requested dataset version binding; a sibling count cannot prove this branch's scope")
+                raise UnverifiedScope(f"QueryScope population branch {tables} lacks requested dataset version binding; a sibling count cannot prove this branch's scope")
             anchors = {alias for alias, src in population.sources.items()
                        if isinstance(src, Scope) and source_is_version_bound(src, set())}
             for table, col, bound_value, node in predicates:
@@ -251,7 +258,7 @@ def validate_scope(sql, params, scope: QueryScope, schema):
         if not whole_covered:
             allowed_parts = set(scope.comparison_target) & {'train','validation','test'}
             if not population_splits or not population_splits <= allowed_parts:
-                raise ValueError("QueryScope whole dataset must not be globally restricted to a split")
+                raise ScopeViolation("QueryScope whole dataset must not be globally restricted to a split")
     grouped_split = any(c.name == 'split' for group in tree.find_all(exp.Group) for c in group.find_all(exp.Column))
     coverage = {'whole_dataset':whole_covered, 'splits':sorted(split_values), 'grouped_split':grouped_split}
     effective_scope = scope.model_copy(deep=True)

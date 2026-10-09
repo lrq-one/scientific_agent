@@ -22,9 +22,18 @@ class SQLScopeValidationError(ValueError):
     def __init__(self, error, candidate, metadata):
         super().__init__(str(error))
         self.candidate = candidate
+        from app.services.query_scope import ScopeViolation
+        failure_code = "SCOPE_VIOLATION" if isinstance(error, ScopeViolation) else "UNVERIFIED_SCOPE"
+        self.failure_code = failure_code
         self.metadata = {**metadata, "sql_candidate": candidate.model_dump(mode="json"),
-                         "scope_validation": {"verified": False, "status": "UNVERIFIED", "reason": str(error)},
+                         "sql_candidate_status": "diagnostic_only",
+                         "scope_validation": {"verified": False, "status": failure_code,
+                                               "failure_code": failure_code, "reason": str(error)},
                          "recovery": {"failed_stage": "sql_scope_validation",
+                                      "candidate_role": "diagnostic_only",
+                                      "failure_code": failure_code,
+                                      "recovery_action": "targeted_sql_repair",
+                                      "retry_budget": 1,
                                       "instruction": "The supplied QueryScope is unchanged. Repair the SQL predicate/lineage, or retrieve missing authorized schema; renaming a Plan or dropping scope does not repair SQL."}}
 
 
@@ -267,11 +276,13 @@ class TextToSQLService:
                 if query_scope:
                     from app.services.query_scope import validate_scope
                     candidate.query_scope = query_scope.model_copy(deep=True)
+                    metadata["query_scope"] = query_scope.model_dump(mode="json")
                     try:
                         metadata["scope_validation"] = validate_scope(candidate.sql, candidate.params, query_scope, full_schema)
                     except ValueError as error:
                         raise SQLScopeValidationError(error, candidate, metadata) from error
                     candidate.query_scope = query_scope.model_validate(metadata['scope_validation']['effective_query_scope']) if metadata['scope_validation'].get('effective_query_scope') else candidate.query_scope
+                metadata["sql_candidate_status"] = "scope_verified" if query_scope else "generated"
                 return candidate, metadata
             except Exception as exc:
                 if isinstance(exc, SQLScopeValidationError):
@@ -311,5 +322,6 @@ class TextToSQLService:
             reason=fallback_reason,
         )
         return candidate, {"generator": "deterministic_fixture_fallback", "relevant_tables": list(relevant),
+                           "sql_candidate_status": "generated",
                            "llm_telemetry": failure_telemetry}
 

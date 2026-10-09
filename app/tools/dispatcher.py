@@ -134,10 +134,19 @@ class ToolDispatcher:
             selected = self._datasource(context, args)
             if name == "query_checker":
                 database = self.database_factory(selected, context.resources.authorized_datasources)
+                validation = None
                 if context.query_scope:
                     from app.services.query_scope import validate_scope
-                    validate_scope(str(args["sql"]), dict(args.get("params") or {}), context.query_scope, context.schema_cache)
-                return await asyncio.to_thread(database.check_query, str(args["sql"]), dict(args.get("params") or {}))
+                    validation = validate_scope(str(args["sql"]), dict(args.get("params") or {}), context.query_scope, context.schema_cache)
+                result = await asyncio.to_thread(database.check_query, str(args["sql"]), dict(args.get("params") or {}))
+                if result.success:
+                    result.metadata.update({
+                        "sql_candidate": {"sql": str(args["sql"]), "params": dict(args.get("params") or {})},
+                        "sql_candidate_status": "checked",
+                    })
+                    if validation:
+                        result.metadata["scope_validation"] = validation
+                return result
             if not context.schema_cache:
                 raise ValueError("Retrieve authorized schema before generating SQL")
             from app.services.text2sql import TextToSQLService, SQLScopeValidationError
@@ -153,7 +162,7 @@ class ToolDispatcher:
             except SQLScopeValidationError as error:
                 return ToolResult(success=False, source=selected, error=str(error),
                                   metadata=error.metadata, outcome="INVALID_ARGUMENT",
-                                  failure_code="UNVERIFIED_SCOPE", failed_stage="sql_scope_validation",
+                                  failure_code=error.failure_code, failed_stage="sql_scope_validation",
                                   recoverable=True, exception_type=type(error).__name__, reason_summary=str(error)[:600])
             if (metadata.get("llm_telemetry") or {}).get("fallback"):
                 raise RuntimeError("Real Text-to-SQL unavailable; fixture SQL is not a runtime observation")
@@ -252,6 +261,13 @@ class ToolDispatcher:
                     raise ValueError("QueryScope execution result lacks executed SQL/params provenance")
                 validation = validate_scope(actual_sql, result.metadata["params"], context.query_scope, context.schema_cache)
                 result.metadata["scope_validation"] = {**validation, "returned_rows": len(result.data), "empty_result": not result.data}
+            if result.success:
+                actual_sql = result.metadata.get("sql") or str(args["sql"])
+                actual_params = result.metadata.get("params") or dict(args.get("params") or {})
+                result.metadata.update({
+                    "sql_candidate": {"sql": actual_sql, "params": actual_params},
+                    "sql_candidate_status": "executed",
+                })
             return result
 
         if name == "compare_structure_groups":

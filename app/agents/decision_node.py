@@ -45,6 +45,23 @@ def eligible_call_tools(state: ScientificAgentState) -> list[str]:
         names = set(state.allowed_tools)
     else:
         names = {name for step in eligible_plan_steps(state) for name in (step.selected_tools or step.preferred_tools)} & set(state.allowed_tools)
+    # Query Checker is a validator, never a SQL author.  Do this before the
+    # LLM sees callable tool names so a failed Text2SQL diagnostic candidate
+    # cannot accidentally become an executable action.
+    if "query_checker" in names:
+        from app.services.sql_candidate import has_trusted_sql_source
+        if state.plan:
+            scoped_steps = [step for step in eligible_plan_steps(state)
+                            if "query_checker" in (step.selected_tools or step.preferred_tools)]
+            has_source = any(has_trusted_sql_source(state, population_id=step.population_id)
+                             for step in scoped_steps)
+        elif state.populations:
+            has_source = any(has_trusted_sql_source(state, population_id=item.population_id)
+                             for item in state.populations)
+        else:
+            has_source = has_trusted_sql_source(state)
+        if not has_source:
+            names.discard("query_checker")
     # Mirror the existing dispatch prerequisite, without choosing a schema
     # tool, table, plan or next action on the model's behalf.
     if not state.schema_cache: names.discard('text_to_sql')
@@ -159,7 +176,12 @@ class DecisionNode:
             "current_step": state.current_step, "allowed_tool_schemas": tools,
             "currently_callable_tools": callable_tools,
             'recorded_schema_tables':sorted(state.schema_cache),
-            'unmet_tool_preconditions':{'text_to_sql':'requires actually retrieved authorized schema; resource identity metadata is not table schema'} if 'text_to_sql' in state.allowed_tools and not state.schema_cache else {},
+            'unmet_tool_preconditions':{
+                **({'text_to_sql': 'requires actually retrieved authorized schema; resource identity metadata is not table schema'}
+                   if 'text_to_sql' in state.allowed_tools and not state.schema_cache else {}),
+                **({'query_checker': 'requires a successful, scope-trusted SQLCandidate or a legal historical/user SQL source; failed Text2SQL candidates are diagnostic-only'}
+                   if 'query_checker' in state.allowed_tools and 'query_checker' not in callable_tools else {}),
+            },
             'currently_callable_step_ids':[s.step_id for s in eligible_plan_steps(state)],
             "recorded_row_tables": recorded_row_tables(state),
             "plan_step_tool_scopes": [{"step_id": step.step_id, "status": step.status,
