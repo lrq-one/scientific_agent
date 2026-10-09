@@ -23,3 +23,41 @@ test('backend persisted status restores after refresh without starting an agent'
   recordTaskEvent(tasks, active, 'A', 'FINAL_ANSWER', { task_id: 'task-A' })
   assert.equal(taskStatusForConversation(tasks, active, 'A'), 'completed')
 })
+
+test('FINAL_ANSWER with inadequate Evidence does not appear as completed', () => {
+  const tasks = {}, active = {}
+  recordTaskEvent(tasks, active, 'A', 'FINAL_ANSWER', {
+    task_id: 'failed-analysis',
+    state: { quality_status: 'INSUFFICIENT_EVIDENCE',
+             goal_coverage: { status: 'PARTIAL', missing_deliverables: ['csv_export'] } },
+  })
+  assert.equal(taskStatusForConversation(tasks, active, 'A'), 'failed')
+})
+
+test('FINAL_ANSWER without evidence and with failed execution is failed', () => {
+  const tasks = {}, active = {}
+  recordTaskEvent(tasks, active, 'A', 'FINAL_ANSWER', {
+    task_id: 'failed-analysis', state: { quality_status: 'EXECUTION_FAILED' },
+  })
+  assert.equal(taskStatusForConversation(tasks, active, 'A'), 'failed')
+})
+
+test('supported final answer with all goals covered remains completed', () => {
+  const tasks = {}, active = {}
+  recordTaskEvent(tasks, active, 'A', 'FINAL_ANSWER', {
+    task_id: 'successful-analysis',
+    state: { quality_status: 'SUPPORTED_CONCLUSION',
+             goal_coverage: { status: 'SATISFIED' } },
+  })
+  assert.equal(taskStatusForConversation(tasks, active, 'A'), 'completed')
+})
+
+test('unsupported answer despite supported quality remains failed when coverage is partial', () => {
+  const tasks = {}, active = {}
+  recordTaskEvent(tasks, active, 'A', 'FINAL_ANSWER', {
+    task_id: 'partial-analysis',
+    state: { quality_status: 'SUPPORTED_CONCLUSION',
+             goal_coverage: { status: 'PARTIAL' } },
+  })
+  assert.equal(taskStatusForConversation(tasks, active, 'A'), 'failed')
+})
