@@ -224,6 +224,19 @@ class ConversationContextResolver:
             # ordinary completed clarification outside the checkpoint graph.
             return FollowUpDecision(interaction_type="NEW_TASK", requires_execution=True,
                                     source="state_context", reason="no previous substantive analysis state")
+        # An exact repeat of the latest substantive user request is an
+        # explicit fresh execution intent (e.g. the UI's "重新分析" action).
+        # Compare ONLY the most recent task in this conversation, never an
+        # older task, an LLM-rewritten goal or an assistant answer.
+        previous_request = next((str(item.get("content") or "").strip()
+            for item in contexts[0].get("messages", []) if item.get("role") == "user"), "")
+        if previous_request and " ".join(query.split()) == " ".join(previous_request.split()):
+            return FollowUpDecision(
+                interaction_type="RERUN", target_task_id=contexts[0]["task"]["id"],
+                target_reference="LATEST", requires_execution=True,
+                source="exact_repeat", reason="用户重复提交最近一条原始任务，重新执行而不是解释旧错误",
+                llm_telemetry={"llm_called": False, "fallback": False},
+            )
         llm = self._configured_llm()
         if llm is None:
             return FollowUpDecision(interaction_type="CLARIFY", reason="semantic model unavailable",
