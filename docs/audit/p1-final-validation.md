@@ -16,11 +16,12 @@
 D08 closure trace；另有独立的 HITL 合同版本、RERUN 防历史污染、两 Population
 scope 和 SQLCandidate recovery 测试。当前新增 P1 测试结果：
 
-- GoalContract：7 passed；
-- PlanStep：13 passed（含 ALL/ANY 谓词）；
+- GoalContract：8 passed；
+- PlanStep：6 passed（含 ALL/ANY 谓词）；
 - RecoveryPolicy：12 passed；
 - deterministic executor：4 passed；
 - acceptance matrix：7 passed；
+- P1 新增离线测试合计：37 passed；
 - P0 SQL/Scope/plan/database regression selected set：151 passed；
 - 前端冻结基准：Node tests 18 passed，Vite build 成功。
 
