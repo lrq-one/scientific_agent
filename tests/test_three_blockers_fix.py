@@ -193,15 +193,17 @@ def test_rejected_plan_fake_decision_schema_observation_enables_text2sql(monkeyp
     state = ScientificAgentState(user_id="u", thread_id="t", goal="analyze", allowed_tools=["search_schema", "text_to_sql"], available_tools=["database"])
     state.decision = AgentDecision(action="REPLAN", plan=[PlanStep(step_id="1", goal="SQL", selected_tools=["text_to_sql"], required_capabilities=[Capability.DATABASE])])
     state = ScientificAgentState.model_validate(run.update_plan(run._return(state), {})["agent"])
-    assert not state.plan and not state.observations
-    feedback = state.control_observations[-1]
-    assert feedback["missing_preconditions"] == ["inspected_schema"]
-    assert feedback["available_schema_tools"] == ["search_schema"]
+    assert len(state.plan) == 2 and not state.observations
+    schema_step = next(step for step in state.plan if "search_schema" in step.selected_tools)
+    sql_step = next(step for step in state.plan if "text_to_sql" in step.selected_tools)
+    assert schema_step.step_id in sql_step.depends_on
+    assert state.control_observations[-1]["success"] is True
     captured = []
     async def decision(schema, system, payload, **kwargs):
         captured.append(payload)
         assert payload["currently_callable_tools"] == ["search_schema"]
-        return AgentDecision(action="CALL_TOOL", tool_name="search_schema", tool_arguments={"query": "molecules"}), {}
+        return AgentDecision(action="CALL_TOOL", tool_name="search_schema",
+                             step_id=schema_step.step_id, tool_arguments={"query": "molecules"}), {}
     monkeypatch.setattr("app.agents.decision_node.structured_call", decision)
     run.decider = DecisionNode()
     state = ScientificAgentState.model_validate(run.decision(run._return(state), {})["agent"])
