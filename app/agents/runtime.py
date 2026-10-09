@@ -754,6 +754,33 @@ class DecisionRuntime:
                        llm_telemetry={"llm_called": False, "fallback": False,
                                       "reason_summary": "nonrecoverable database storage fault"})
             return self._return(state)
+        # A failed CURRENT execution without verified Evidence must not ask a
+        # response model to interpret old conversation errors as new results.
+        # This is a deterministic process-status response, not a fallback
+        # scientific conclusion; the full failures remain in the audit trace.
+        if state.quality_status == "EXECUTION_FAILED" and not state.evidence:
+            failures = [entry for entry in state.control_observations
+                        if entry.get("success") is False]
+            latest = failures[-1] if failures else {}
+            stage = str(latest.get("failed_stage") or
+                        ("tool_execution" if state.tool_calls else "execution_control"))
+            code = str(latest.get("failure_code") or
+                       (state.observations[-1].failure_code if state.observations else
+                        "EXECUTION_FAILED"))
+            state.final_answer = (
+                "本轮分析未获得可验证的科研数据结果，不能给出 MAE 或其他统计结论。"
+                "本轮失败位置：" + stage + "（" + code + "）。"
+                "未验证的历史错误不能用来解释本轮失败原因。"
+                "请查看本次执行轨迹中的计划校验及工具日志；"
+                "任何已生成的文件仅以本轮实际保存的 Artifact 记录为准。"
+            )
+            state.claims = []
+            state.runtime_status = "completed"
+            self._emit(config, "FINAL_ANSWER", "本轮执行失败，未生成科研统计结论",
+                       answer=state.final_answer, state=state.model_dump(mode="json"),
+                       llm_telemetry={"llm_called": False, "fallback": False,
+                                      "reason_summary": "current run failed before verified evidence"})
+            return self._return(state)
         facts = {
             "answer_basis": state.decision.answer_basis,
             "unverified_model_training_binding": unverified_training_binding,
