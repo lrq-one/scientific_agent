@@ -24,6 +24,7 @@ from app.agents.plan_protocol import (prepare_replacement, plan_action_signature
                                       satisfied, retain_verified_prerequisites)
 from app.agents.goal_coverage import assess_goal_coverage
 from app.services.query_scope import UnverifiedScope, validate_scope
+from app.services.database_errors import is_database_storage_corruption
 
 
 NO_PROGRESS_REPLAN_LIMIT = 2
@@ -298,6 +299,9 @@ class DecisionRuntime:
         state = self._state(values)
         state.decision_valid = True
         state.iteration_count += 1
+        if any(result.failure_code == 'DATABASE_STORAGE_CORRUPTION' for result in state.observations):
+            state.decision = AgentDecision(action='FINISH', reason_summary='database storage corruption: stop retries')
+            return self._return(state)
         if state.no_progress_replan_count >= NO_PROGRESS_REPLAN_LIMIT:
             issue = "No-progress replan budget exhausted; bounded termination"
             if issue not in state.blocking_issues:
@@ -519,10 +523,18 @@ class DecisionRuntime:
             outcome = ("RESOURCE_NOT_FOUND" if isinstance(exc, FileNotFoundError) else
                        "UNSUPPORTED_OPERATION" if isinstance(exc, NotImplementedError) else
                        "INVALID_ARGUMENT" if isinstance(exc, (ValueError, KeyError, TypeError)) else "EXECUTION_FAILED")
-            result = ToolResult(success=False, source=name or "unknown", error=f"{type(exc).__name__}: {message[:300]}",
-                                outcome=outcome, failure_code="UNVERIFIED_SCOPE" if isinstance(exc, UnverifiedScope) else outcome,
-                                failed_stage="tool_execution", recoverable=isinstance(exc, (ValueError, TimeoutError)),
-                                exception_type=type(exc).__name__, reason_summary=message[:300])
+            corrupted_storage = is_database_storage_corruption(exc)
+            result = ToolResult(
+                success=False, source=name or "unknown", error=f"{type(exc).__name__}: {message[:300]}",
+                outcome="EXECUTION_FAILED" if corrupted_storage else outcome,
+                failure_code=("DATABASE_STORAGE_CORRUPTION" if corrupted_storage else
+                              "UNVERIFIED_SCOPE" if isinstance(exc, UnverifiedScope) else outcome),
+                failed_stage="datasource_storage" if corrupted_storage else "tool_execution",
+                recoverable=False if corrupted_storage else isinstance(exc, (ValueError, TimeoutError)),
+                exception_type=type(exc).__name__,
+                reason_summary=("PostgreSQL storage page/index error; do not retry SQL or replan"
+                                if corrupted_storage else message[:300]),
+            )
         self._check(config)
         if result.success and self.owner.tool_registry.specs[name].required_capability == "file":
             sources = result.source.replace("\\", "/").lower()
@@ -589,6 +601,10 @@ class DecisionRuntime:
             state.no_progress_replan_count = 0
         if not result.success:
             state.errors.append(result.error or "tool failed")
+            if result.failure_code == "DATABASE_STORAGE_CORRUPTION":
+                issue = "PostgreSQL datasource storage is damaged or unreadable; stop SQL retries and inspect the database"
+                if issue not in state.blocking_issues:
+                    state.blocking_issues.append(issue)
         if state.plan:
             step = next(s for s in state.plan if s.step_id == call["step_id"])
             step.observations.append({"plan_id": call.get("plan_id"), "step_id": step.step_id,
@@ -722,6 +738,19 @@ class DecisionRuntime:
             state.quality_status = "INSUFFICIENT_EVIDENCE"
         else:
             state.quality_status = "SUPPORTED_CONCLUSION"
+        # A physical storage fault is not an empirical result. End with a
+        # truthful process-only status rather than another paid model call.
+        if any(result.failure_code == "DATABASE_STORAGE_CORRUPTION" for result in state.observations):
+            state.quality_status = "EXECUTION_FAILED"
+            state.final_answer = ("数据库存储发生页或索引读取异常，本次分析已停止，未生成科研统计结论。"
+                                  "这无法通过重写 SQL 或重规划修复；请先由管理员检查 PostgreSQL 日志并安全恢复数据库。")
+            state.claims = []
+            state.runtime_status = "completed"
+            self._emit(config, "FINAL_ANSWER", "数据库存储异常，已停止执行",
+                       answer=state.final_answer, state=state.model_dump(mode="json"),
+                       llm_telemetry={"llm_called": False, "fallback": False,
+                                      "reason_summary": "nonrecoverable database storage fault"})
+            return self._return(state)
         facts = {
             "answer_basis": state.decision.answer_basis,
             "unverified_model_training_binding": unverified_training_binding,
