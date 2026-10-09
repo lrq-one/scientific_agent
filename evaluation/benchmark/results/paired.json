@@ -1,7 +1,7 @@
 {
   "schema_version": "scientific-agent-benchmark-paired-v1",
   "baseline_run": "baseline-20261009T173316Z",
-  "candidate_run": "optimized_protocol_replay-20261009T173914Z",
+  "candidate_run": "optimized_protocol_replay-20261009T174548Z",
   "same_cases": true,
   "rows": [
     {

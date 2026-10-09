@@ -1,8 +1,8 @@
 {
   "schema_version": "scientific-agent-benchmark-v1",
-  "run_id": "ablation_protocol_replay-20261009T174429Z",
+  "run_id": "ablation_protocol_replay-20261009T174548Z",
   "label": "ablation_protocol_replay",
-  "git_sha": "11fcaedd877ae2acad058d4bdc0da61ab286da71",
+  "git_sha": "d81e6ce9c3bedde3c6aa81b3349a9eb943293bf7",
   "environment": "offline_replay",
   "model": "not_measured",
   "source_trace": "D:\\工作\\scientific_agent\\evaluation\\benchmark\\traces.baseline.jsonl",
