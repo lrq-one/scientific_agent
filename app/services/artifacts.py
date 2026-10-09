@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import hashlib
 from typing import Any
 
 import matplotlib
@@ -39,14 +40,16 @@ class ArtifactService:
         output = BytesIO()
         figure.savefig(output, format="png", dpi=160)
         plt.close(figure)
+        content = output.getvalue()
         return self.storage.upload_artifact(
             owner_id,
             thread_id,
             filename,
             "image/png",
-            output.getvalue(),
+            content,
             "chart",
-            {"generator": "plot_metric_comparison", "models": names},
+            {"generator": "plot_metric_comparison", "models": names,
+             "sha256": hashlib.sha256(content).hexdigest(), "verified_bytes": len(content)},
         )
 
     def save_result_table(
@@ -78,14 +81,16 @@ class ArtifactService:
             artifact_type = "csv"
         else:
             raise ValueError("output_format must be csv or xlsx")
+        content = output.getvalue()
         return self.storage.upload_artifact(
             owner_id,
             thread_id,
             filename,
             content_type,
-            output.getvalue(),
+            content,
             artifact_type,
-            {"generator": "save_result_table", "rows": len(frame)},
+            {"generator": "save_result_table", "rows": len(frame), "columns": list(frame.columns),
+             "sha256": hashlib.sha256(content).hexdigest(), "verified_bytes": len(content)},
         )
 
     def save_chart(self, owner_id: str, thread_id: str, content: bytes, filename: str) -> dict[str, Any]:

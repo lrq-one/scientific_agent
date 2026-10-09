@@ -125,6 +125,8 @@ Answer every explicitly requested outcome, including an overall total separately
             system = "\n".join(line for line in system.splitlines() if not line.startswith((
                 "Quality status is authoritative:", "Describe counts only", "When unverified_model_training_binding=true",
             )))
+        from app.services.prompt_catalog import prompt_catalog
+        system = prompt_catalog.compose("grounded_response", system)
         measurements = []
         validation_records = []
         validation = None

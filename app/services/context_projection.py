@@ -11,6 +11,13 @@ from dataclasses import dataclass
 from typing import Any
 
 
+CRITICAL_FACT_KEYS = (
+    "goal_contract", "resource_binding", "query_scope", "population_requirements",
+    "sql_candidate_lineage", "evidence_ids", "current_step", "allowed_actions",
+    "remaining_tool_budget", "remaining_replan_budget",
+)
+
+
 def _dump(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
@@ -38,7 +45,53 @@ class Projection:
 def _ledger(payload: dict[str, Any], *, projection: str) -> dict[str, Any]:
     chars = len(str(payload))
     return {"projection": projection, "field_count": len(payload), "approx_chars": chars,
-            "approx_tokens": max(1, (chars + 3) // 4), "compacted": True}
+            "approx_tokens": max(1, (chars + 3) // 4), "compacted": True,
+            "critical_facts_valid": bool(payload.get("critical_facts_valid", False)),
+            "critical_fact_fields": list(CRITICAL_FACT_KEYS)}
+
+
+def _unique_recent(items: list[Any], key) -> list[Any]:
+    seen = set()
+    output = []
+    for item in reversed(items):
+        marker = key(item)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        output.append(item)
+    return list(reversed(output))
+
+
+def _sql_lineage(state: Any) -> list[dict[str, Any]]:
+    lineage = []
+    for call, result in zip(state.tool_calls, state.observations):
+        metadata = getattr(result, "metadata", {}) or {}
+        candidate = metadata.get("sql_candidate")
+        if candidate:
+            lineage.append({"tool_call_id": call.get("tool_call_id"),
+                            "status": metadata.get("sql_candidate_status", "diagnostic_only"),
+                            "candidate": _bound(candidate, chars=1800),
+                            "scope_validation": _bound(metadata.get("scope_validation", {}), chars=1400)})
+        elif isinstance(getattr(result, "data", None), dict) and result.data.get("sql"):
+            lineage.append({"tool_call_id": call.get("tool_call_id"),
+                            "status": metadata.get("sql_candidate_status", "unknown"),
+                            "candidate": _bound({"sql": result.data.get("sql"), "params": result.data.get("params", {})}, chars=1800)})
+    previous = (state.conversation_context.get("previous_provenance") or {}).get("sql_candidate")
+    if previous:
+        lineage.append({"tool_call_id": "previous_provenance", "status": previous.get("candidate_status", previous.get("status", "unknown")),
+                        "candidate": _bound(previous, chars=1800)})
+    return _unique_recent(lineage, lambda item: (item.get("tool_call_id"), item.get("status"), str(item.get("candidate"))))
+
+
+def validate_critical_facts(payload: dict[str, Any]) -> bool:
+    """Validate the explicit projection contract before an LLM call.
+
+    Empty values are valid for optional facts, but the keys themselves must be
+    present so compaction cannot silently drop an authorization boundary.
+    """
+    required = {"goal_contract", "resource_binding", "query_scope", "current_step",
+                "allowed_actions", "remaining_tool_budget", "remaining_replan_budget"}
+    return required <= set(payload) and "projection_contract" in payload
 
 
 def decision_context(state: Any, *, tools: list[dict[str, Any]], skill_context: str,
@@ -46,13 +99,16 @@ def decision_context(state: Any, *, tools: list[dict[str, Any]], skill_context: 
     """Return the minimal safe decision view while preserving audit references."""
     observations = []
     from app.config import MAX_REPLANS, MAX_TOOL_CALLS
-    for call, result in list(zip(state.tool_calls, state.observations))[-4:]:
+    recent = _unique_recent(list(zip(state.tool_calls, state.observations)),
+                            lambda pair: pair[0].get("tool_call_id", str(pair[0])))
+    for call, result in recent[-4:]:
         result_data = _dump(result)
         # Keep identifiers and validation metadata intact; bound bulky rows.
         if isinstance(result_data, dict):
             result_data = {key: _bound(value, rows=4, chars=900) for key, value in result_data.items()}
         observations.append({"tool_call": _bound(call, chars=900), "result": result_data})
-    evidence = [_bound(_dump(item), rows=4, chars=900) for item in state.evidence[-6:]]
+    evidence_items = _unique_recent(state.evidence, lambda item: getattr(item, "evidence_id", str(item)))
+    evidence = [_bound(_dump(item), rows=4, chars=900) for item in evidence_items[-6:]]
     plan_scopes = []
     for step in state.plan:
         predicate = getattr(step, "completion_predicate", None) or getattr(step, "completion_condition", None)
@@ -62,6 +118,15 @@ def decision_context(state: Any, *, tools: list[dict[str, Any]], skill_context: 
                             "completion_predicate": _dump(predicate) if predicate else None,
                             "depends_on": step.depends_on})
     from app.services.prompt_contract import PROMPT_VERSIONS
+    from app.services.user_profile import task_profile_context
+    profile = None
+    raw_profile = state.conversation_context.get("user_profile") if isinstance(state.conversation_context, dict) else None
+    if isinstance(raw_profile, dict) and raw_profile.get("user_id") == state.user_id:
+        try:
+            from app.models.schemas import UserProfile
+            profile = task_profile_context(UserProfile.model_validate(raw_profile))
+        except Exception:
+            profile = None
     payload = {
         "prompt_contract_version": PROMPT_VERSIONS["planning_decision"],
         "user_question": state.user_request, "goal": state.goal,
@@ -69,6 +134,7 @@ def decision_context(state: Any, *, tools: list[dict[str, Any]], skill_context: 
                                        "required_deliverables": state.required_deliverables},
         "goal_contract": _dump(state.goal_contract) if state.goal_contract else None,
         "conversation": _bound(state.conversation_context, rows=4),
+        "user_profile": profile,
         "resources": _dump(state.resource_summary), "resource_grounding": _bound(state.resource_hint),
         "selected_skills": state.selected_skills, "skill_instructions": skill_context[:3600],
         "plan": [_bound(_dump(step), chars=900) for step in state.plan], "current_step": state.current_step,
@@ -88,9 +154,13 @@ def decision_context(state: Any, *, tools: list[dict[str, Any]], skill_context: 
         "no_progress_replan_count": state.no_progress_replan_count,
         "last_decision": _dump(state.decision) if state.decision else None,
         "control_observations": state.control_observations[-3:],
+        "sql_candidate_lineage": _sql_lineage(state),
+        "evidence_ids": [item.evidence_id for item in evidence_items],
+        "critical_facts_valid": True,
         "projection_contract": {"preserved": ["user_goal", "goal_contract", "resource_binding", "query_scope", "populations", "sql_candidate_lineage", "evidence_ids"],
                                 "source_state_unchanged": True},
     }
+    payload["critical_facts_valid"] = validate_critical_facts(payload)
     return Projection(payload, _ledger(payload, projection="decision"))
 
 
@@ -99,6 +169,7 @@ def text2sql_context(*, goal: str, query_scope: Any, resource_binding: Any, sche
     payload = {"goal": goal, "query_scope": _dump(query_scope), "resource_binding": _dump(resource_binding),
                "schema": _bound(schema, rows=20, chars=1000), "relationships": _bound(relationships),
                "repair_feedback": (repair_feedback or "")[:2600],
+               "critical_facts_valid": query_scope is not None and resource_binding is not None,
                "projection_contract": {"preserved": ["goal", "query_scope", "resource_binding", "repair_feedback"], "source_state_unchanged": True}}
     return Projection(payload, _ledger(payload, projection="text2sql"))
 
@@ -108,5 +179,6 @@ def final_answer_context(facts: dict[str, Any]) -> Projection:
                "quality_status": facts.get("quality_status"), "evidence": _bound(facts.get("evidence", []), rows=12, chars=1400),
                "claims": _bound(facts.get("claims", [])), "artifacts": _bound(facts.get("artifacts", [])),
                "uncertainties": _bound(facts.get("uncertainties", [])),
+               "critical_facts_valid": "goal_coverage" in facts and "quality_status" in facts,
                "projection_contract": {"preserved": ["evidence", "claims", "goal_coverage", "quality_status", "artifacts"], "source_state_unchanged": True}}
     return Projection(payload, _ledger(payload, projection="final_answer"))

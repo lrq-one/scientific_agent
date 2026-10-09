@@ -87,8 +87,11 @@ def recorded_row_tables(state: ScientificAgentState) -> list[dict]:
     return tables
 
 
-async def structured_call(schema, system: str, payload: dict[str, Any], *, tool_names=None, call_tool_names=None, plan=None, action_names=None, tool_capabilities=None, call_step_ids=None):
+async def structured_call(schema, system: str, payload: dict[str, Any], *, tool_names=None, call_tool_names=None, plan=None, action_names=None, tool_capabilities=None, call_step_ids=None, prompt_node: str | None = None):
     from langchain_core.messages import HumanMessage, SystemMessage
+    if prompt_node:
+        from app.services.prompt_catalog import prompt_catalog
+        system = prompt_catalog.compose(prompt_node, system)
     collector = UsageCollector()
     started = perf_counter()
     from app.services.live_budget import record_live_call, reserve_live_call
@@ -226,6 +229,7 @@ Export actual recorded rows via input_refs for save_result_table, not newly auth
 recorded_row_tables lists EXACT valid references and original column names. Pick an actual table; export separate files for independent sources if needed instead of inventing a merged table. Omit required_columns unless the user explicitly requires particular fields. References support dictionary paths ONLY, not array indexes or expressions; never guess a path such as subgroups[2]. A prior export failure is fixed by choosing a real table/reference and its existing columns, not by reusing incompatible invented columns.
 """, payload, tool_names=[item["name"] for item in tools], call_tool_names=callable_tools, plan=state.plan, action_names=actions,
             tool_capabilities={item['name']:item['required_capability'] for item in tools},
-            call_step_ids=[s.step_id for s in eligible_plan_steps(state)] if state.plan else None)
+            call_step_ids=[s.step_id for s in eligible_plan_steps(state)] if state.plan else None,
+            prompt_node="decision")
         telemetry["context_ledger"] = projection.ledger
         return decision, telemetry

@@ -49,6 +49,20 @@ class ResourceBinding(BaseModel):
     ambiguous_fields: list[str] = Field(default_factory=list)
 
 
+class UserProfile(BaseModel):
+    """Small, explicit long-lived preferences; task facts stay in Task State."""
+
+    user_id: str
+    locale: str = "zh-CN"
+    domain: str | None = None
+    default_units: dict[str, str] = Field(default_factory=dict)
+    response_detail: Literal["brief", "standard", "detailed"] = "standard"
+    authorized_preferences: dict[str, str | bool | int | float] = Field(default_factory=dict)
+    version: int = 1
+    provenance: str = "user_confirmed"
+    updated_at: str | None = None
+
+
 class QueryScope(BaseModel):
     dataset_id: str | None = None
     dataset_version: str | None = None

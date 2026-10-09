@@ -189,7 +189,7 @@ class TextToSQLService:
             f"Selected scientific Skill guidance (follow it unless it conflicts with security/schema):\n{skill_context[:4000]}\n"
             if skill_context else ""
         )
-        return (
+        prompt = (
             "Generate one parameterized PostgreSQL read-only query as SQLCandidate.\n"
             f"Goal: {goal}\nCurrent step: {current_step}\nDatasource: {datasource}\n"
             f"Original User Goal (immutable): {original_goal or goal}\n"
@@ -214,9 +214,12 @@ class TextToSQLService:
             "For coverage, absence, or membership comparisons preserve the relevant base population, including non-members and zero-count groups. "
             "Do not put a nullable LEFT JOIN right-side version/split predicate in WHERE when that eliminates the absent records the question asks about; filter the joined membership in ON, a filtered CTE, or EXISTS instead. "
             "Distinguish membership in a dataset version from the actual train split. Return enough grouped counts/denominators to answer the requested coverage question. "
+            "When the goal combines prediction error with training coverage, prefer separate scope-bound populations. Prove prediction lineage through predictions→model_runs→experiments→dataset_versions and coverage lineage through training_memberships→dataset_versions; never treat a model_run label as a training version without that relationship. "
             "用户要求不同/各结构类型时，必须使用 schema 中真实的 structure_type 列分组；"
             "包括 fused-ring 不代表只分 fused/non-fused 两组。用户目标优先于 Skill 示例。"
         )
+        from app.services.prompt_catalog import prompt_catalog
+        return prompt_catalog.compose("text2sql", prompt)
 
     async def generate(
         self,
@@ -233,6 +236,7 @@ class TextToSQLService:
         resource_binding=None,
     ) -> tuple[SQLCandidate, dict[str, Any]]:
         from app.services.context_projection import text2sql_context
+        from app.services.query_decomposition import analyze_training_error_coverage
         relevant = self.retriever.retrieve((original_goal or "") + "\n" + goal, full_schema)
         if query_scope and (query_scope.dataset_version or query_scope.all_versions):
             for name in ("dataset_versions", "datasets", "training_memberships"):
@@ -244,6 +248,7 @@ class TextToSQLService:
             if relation.get("target_table") in related_names:
                 related_names.add(relation.get("source_table", ""))
         relevant = {name: full_schema[name] for name in related_names if name in full_schema}
+        decomposition = analyze_training_error_coverage(goal=(original_goal or goal), schema=full_schema, relationships=relationships)
         llm = self._configured_llm()
         if llm is not None:
             collector = UsageCollector()
@@ -273,6 +278,7 @@ class TextToSQLService:
                                                         resource_binding=resource_binding,
                                                         schema=relevant, relationships=relationships,
                                                         repair_feedback=repair_feedback).ledger,
+                    "scope_decomposition": decomposition,
                     "llm_telemetry": {
                         "llm_called": True, "model_configured": llm_settings().model,
                         "latency_ms": round((perf_counter() - started) * 1000, 2),
@@ -337,6 +343,7 @@ class TextToSQLService:
         )
         from app.services.prompt_contract import PROMPT_VERSIONS
         return candidate, {"generator": "deterministic_fixture_fallback", "prompt_contract_version": PROMPT_VERSIONS["text2sql"], "relevant_tables": list(relevant),
+                           "scope_decomposition": decomposition,
                            "context_ledger": text2sql_context(goal=goal, query_scope=query_scope,
                                                                resource_binding=resource_binding,
                                                                schema=relevant, relationships=relationships,

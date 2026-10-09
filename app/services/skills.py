@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import re
+import hashlib
 from time import perf_counter
 from typing import Any
 
@@ -55,7 +56,31 @@ class SkillService:
             missing = self.REQUIRED_METADATA - set(metadata)
             if missing:
                 raise ValueError(f"{path}: missing skill metadata {sorted(missing)}")
-            skills.append({**metadata, "instructions": match.group(2).strip(), "path": str(path)})
+            body = match.group(2).strip()
+            # Keep one registry: these fields are derived from the canonical
+            # SKILL.md instead of maintained in a second catalog file.
+            required = list(metadata.get("required_capabilities", []))
+            inferred_inputs = (["csv", "xlsx"] if "file" in required else [])
+            if "database" in required:
+                inferred_inputs.append("authorized_schema")
+            enriched = {
+                **metadata,
+                "id": path.parent.name,
+                "version": str(metadata.get("version", "1.0.0")),
+                "input_types": list(metadata.get("input_types", inferred_inputs)),
+                "capabilities": list(metadata.get("capabilities", metadata.get("intents", []))),
+                "required_resources": list(metadata.get("required_resources", required)),
+                "negative_intents": list(metadata.get("negative_intents", [])),
+                "tool_capabilities": list(metadata.get("tool_capabilities", metadata.get("allowed_tools", []))),
+                "prerequisites": list(metadata.get("prerequisites", [])),
+                "references": list(metadata.get("references", [])),
+                "content_hash": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                "enabled": bool(metadata.get("enabled", True)),
+                "deprecated": bool(metadata.get("deprecated", False)),
+                "instructions": body,
+                "path": str(path),
+            }
+            skills.append(enriched)
         return skills
 
     def select(self, goal: str, task_type: str) -> list[str]:
@@ -80,6 +105,20 @@ class SkillService:
                 scored.append((score, skill["name"]))
         return [name for _, name in sorted(scored, reverse=True)[:3]]
 
+    def catalog(self) -> list[dict[str, Any]]:
+        """L0 metadata only; full instructions are intentionally excluded."""
+        return [{key: value for key, value in skill.items() if key not in {"instructions", "path"}}
+                for skill in self._catalog() if skill.get("enabled", True) and not skill.get("deprecated", False)]
+
+    def detail(self, name: str, *, max_chars: int | None = None) -> dict[str, Any] | None:
+        """L3 detail loading for an already selected skill."""
+        skill = self.by_name().get(name)
+        if not skill or not skill.get("enabled", True) or skill.get("deprecated", False):
+            return None
+        if max_chars is None:
+            return dict(skill)
+        return {**skill, "instructions": str(skill.get("instructions", ""))[:max_chars]}
+
     def _configured_llm(self):
         if self.llm is not None:
             return self.llm
@@ -101,13 +140,20 @@ class SkillService:
     @staticmethod
     def _compact(skill: dict) -> dict[str, Any]:
         return {
+            "id": skill.get("id", skill.get("name", "")),
             "name": skill["name"],
+            "version": skill.get("version", "1.0.0"),
             "description": skill.get("description", ""),
             "domains": skill.get("domains", []),
             "intents": skill.get("intents", []),
             "required_capabilities": skill.get("required_capabilities", []),
             "optional_capabilities": skill.get("optional_capabilities", []),
             "tags": skill.get("tags", []),
+            "input_types": skill.get("input_types", []),
+            "capabilities": skill.get("capabilities", []),
+            "required_resources": skill.get("required_resources", []),
+            "negative_intents": skill.get("negative_intents", []),
+            "enabled": skill.get("enabled", True),
             "risk_level": skill.get("risk_level", "low"),
         }
 
@@ -165,6 +211,8 @@ class SkillService:
             f"Available capabilities: {sorted(available)}\n"
             f"Skill catalog: {json.dumps([self._compact(item) for item in candidates], ensure_ascii=False)}"
         )
+        from app.services.prompt_catalog import prompt_catalog
+        prompt = prompt_catalog.compose("skill_router", prompt)
         started = perf_counter()
         from app.services.live_budget import record_live_call, reserve_live_call
         reserve_live_call("skill_routing", max(1, len(prompt) // 4 + 1200))
@@ -215,13 +263,16 @@ class SkillService:
             skill = catalog.get(name)
             if not skill:
                 continue
+            detail = self.detail(name, max_chars=max_chars_per_skill)
+            if not detail:
+                continue
             blocks.append(
                 "\n".join(
                     [
                         f"Skill: {name}",
-                        f"Description: {skill.get('description', '')}",
-                        f"Allowed tools: {', '.join(skill.get('allowed_tools', []))}",
-                        str(skill.get("instructions", ""))[:max_chars_per_skill],
+                        f"Description: {detail.get('description', '')}",
+                        f"Allowed tools: {', '.join(detail.get('allowed_tools', []))}",
+                        str(detail.get("instructions", "")),
                     ]
                 )
             )

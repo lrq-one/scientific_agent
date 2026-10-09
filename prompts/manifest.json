@@ -1,0 +1,13 @@
+{
+  "schema_version": "scientific-agent-prompt-manifest-v1",
+  "core": "core/AGENT_POLICY.md",
+  "nodes": {
+    "skill_router": "nodes/skill_router.md",
+    "planning": "nodes/planning.md",
+    "decision": "nodes/decision.md",
+    "recovery": "nodes/recovery.md",
+    "text2sql": "nodes/text2sql.md",
+    "grounded_response": "nodes/grounded_response.md",
+    "compaction": "nodes/compaction.md"
+  }
+}
