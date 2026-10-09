@@ -768,7 +768,7 @@ class DecisionRuntime:
                        (state.observations[-1].failure_code if state.observations else
                         "EXECUTION_FAILED"))
             state.final_answer = (
-                "本轮分析未获得可验证的科研数据结果，不能给出 MAE 或其他统计结论。"
+                "本轮分析未获得可验证的科研数据结果，不能给出未经证据支持的统计结论。"
                 "本轮失败位置：" + stage + "（" + code + "）。"
                 "未验证的历史错误不能用来解释本轮失败原因。"
                 "请查看本次执行轨迹中的计划校验及工具日志；"
