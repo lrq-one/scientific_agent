@@ -450,6 +450,116 @@ class DecisionRuntime:
             return decision, telemetry
         return None
 
+    @staticmethod
+    def _trusted_candidate_payload(state, population_id=None):
+        """Return one successful Text2SQL candidate with its original params."""
+        from app.services.sql_candidate import DIAGNOSTIC_ONLY
+        for call, result in reversed(list(zip(state.tool_calls, state.observations))):
+            if call.get("tool") != "text_to_sql" or not result.success:
+                continue
+            if result.metadata.get("sql_candidate_status") == DIAGNOSTIC_ONLY:
+                continue
+            if state.populations and result.metadata.get("population_id") != population_id:
+                continue
+            data = result.data if isinstance(result.data, dict) else {}
+            if data.get("sql"):
+                return {"sql": data["sql"], "params": dict(data.get("params") or {})}
+        return None
+
+    @staticmethod
+    def _deterministic_tool_arguments(state, tool, population_id=None):
+        """Build arguments only from exact persisted/bound facts.
+
+        This deliberately omits ambiguous row/file/model choices. Returning
+        ``None`` hands control back to the LLM rather than guessing.
+        """
+        if tool == "search_schema":
+            return {"query": state.goal}
+        if tool == "get_table_relationships":
+            return {}
+        if tool == "list_workspace_files" or tool == "list_datasources":
+            return {}
+        if tool == "text_to_sql":
+            args = {"goal": state.goal}
+            feedback = DecisionRuntime._sql_repair_feedback(state, state.query_scope)
+            if feedback:
+                args["repair_feedback"] = feedback
+            return args
+        if tool in {"query_checker", "execute_readonly_sql"}:
+            candidate = DecisionRuntime._trusted_candidate_payload(state, population_id)
+            if candidate is None:
+                return None
+            return candidate
+        files = list(state.resource_binding.files or state.available_files)
+        if tool in {"inspect_table", "read_csv", "read_excel", "profile_dataset",
+                     "calculate_metrics", "find_high_error_samples", "filter_samples"}:
+            if len(files) != 1:
+                return None
+            args = {"filename": files[0]}
+            if tool == "find_high_error_samples":
+                args["limit"] = 5
+            if tool == "filter_samples":
+                return None
+            return args
+        if tool == "group_metrics":
+            if len(files) != 1 or len(state.query_scope.grouping) != 1:
+                return None
+            return {"filename": files[0], "group": state.query_scope.grouping[0]}
+        if tool == "compare_models":
+            if len(files) != 2:
+                return None
+            return {"filenames": files}
+        return None
+
+    def _deterministic_decision(self, state, config):
+        """Return a safe next CALL_TOOL only when the action and inputs are unique."""
+        from app.agents.decision_node import eligible_call_tools, eligible_plan_steps
+        eligible_steps = eligible_plan_steps(state) if state.plan else []
+        if state.plan and len(eligible_steps) != 1:
+            return None
+        step = eligible_steps[0] if eligible_steps else None
+        names = eligible_call_tools(state)
+        successful_names = {
+            call.get("tool") for call, result in zip(state.tool_calls, state.observations)
+            if result.success
+        }
+        # Repeating a successful metadata call is not progress. A SQL tool is
+        # handled separately below because a new candidate/check is required.
+        names = [name for name in names if name not in successful_names]
+        candidate = self._trusted_candidate_payload(state, step.population_id if step else None)
+        if "execute_readonly_sql" in names and candidate is not None:
+            checked = any(
+                call.get("tool") == "query_checker" and result.success
+                and (result.metadata.get("sql_candidate") or {}).get("sql") == candidate["sql"]
+                for call, result in zip(state.tool_calls, state.observations)
+            )
+            if "query_checker" in names and not checked:
+                names.remove("execute_readonly_sql")
+        # Without a trusted candidate execute is never a deterministic choice.
+        if "execute_readonly_sql" in names and candidate is None:
+            names.remove("execute_readonly_sql")
+        candidates = [(name, self._deterministic_tool_arguments(state, name, step.population_id if step else None))
+                      for name in names]
+        candidates = [(name, args) for name, args in candidates if args is not None]
+        if len(candidates) != 1:
+            return None
+        tool, arguments = candidates[0]
+        spec = self.owner.tool_registry.specs.get(tool)
+        if spec is None:
+            return None
+        choice = ToolChoice(tool=tool, arguments=arguments, reason="deterministic executor: unique authorized action with persisted inputs")
+        valid, _ = self.owner.tool_registry.validate_choice(choice)
+        if not valid:
+            return None
+        return AgentDecision(
+            action="CALL_TOOL",
+            tool_name=tool,
+            step_id=step.step_id if step else None,
+            population_id=step.population_id if step else None,
+            tool_arguments=arguments,
+            reason_summary="deterministic_executor: unique authorized action and trusted inputs",
+        )
+
     def decision(self, values, config: RunnableConfig):
         self._check(config)
         state = self._state(values)
@@ -473,9 +583,19 @@ class DecisionRuntime:
             if directed is not None:
                 decision, telemetry = directed
             else:
-                tools = [self.owner.tool_registry.specs[name].model_dump() for name in state.allowed_tools]
-                decision, telemetry = self._await(self.decider.decide(state, tools, self.owner.skills.execution_context(state.selected_skills)), config)
-                self._check(config)
+                deterministic = self._deterministic_decision(state, config)
+                if deterministic is not None:
+                    decision = deterministic
+                    telemetry = {
+                        "llm_called": False,
+                        "fallback": False,
+                        "decision_source": "deterministic_executor",
+                        "reason_summary": deterministic.reason_summary,
+                    }
+                else:
+                    tools = [self.owner.tool_registry.specs[name].model_dump() for name in state.allowed_tools]
+                    decision, telemetry = self._await(self.decider.decide(state, tools, self.owner.skills.execution_context(state.selected_skills)), config)
+                    self._check(config)
             state.decision_telemetry = telemetry
             state.decision = decision
             if decision.population_requests:
@@ -512,6 +632,7 @@ class DecisionRuntime:
                        decision=decision.model_dump(mode="json"), iteration=state.iteration_count,
                        observed_tool_call_ids=[call["tool_call_id"] for call in state.tool_calls],
                        loaded_evidence_ids=[item.evidence_id for item in state.evidence],
+                       decision_source=telemetry.get("decision_source", "llm_control_plane"),
                        llm_telemetry=telemetry)
         except (TimeoutError, asyncio.CancelledError):
             raise
