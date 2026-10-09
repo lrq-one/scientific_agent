@@ -27,7 +27,7 @@ async def test_run_comparison_cannot_select_two_dataset_version_skill():
         "用 training_db 的 predictions 比较 baseline-run 与 candidate-run 的分组 MAE，导出 CSV",
         "general", {"database", "artifact"},
     )
-    assert source == "llm_structured"
+    assert source == "llm_compact_catalog"
     assert "cross_dataset_comparison" not in selected
     assert "experiment_run_diagnosis" in selected
     assert llm.requests
