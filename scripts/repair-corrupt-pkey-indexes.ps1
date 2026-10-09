@@ -1,9 +1,9 @@
-# PostgreSQL 16 / scientific_agent: guarded repair for two confirmed corrupt PK indexes.
-# This script never deletes volumes, restores over a database, or calls an LLM.
+# Safe, backup-first recovery for two PostgreSQL 16 primary-key indexes.
+# No volumes are removed or replaced, and no app/LLM test is started.
 # Usage:
-#   .\scripts\repair-corrupt-pkey-indexes.ps1           # read-only inspect
+#   .\scripts\repair-corrupt-pkey-indexes.ps1           # inspect only
 #   .\scripts\stop-dev.ps1 -KeepDocker
-#   .\scripts\repair-corrupt-pkey-indexes.ps1 -Apply    # dump + verify + explicit consent + REINDEX
+#   .\scripts\repair-corrupt-pkey-indexes.ps1 -Apply    # cold snapshot first, REINDEX only with consent
 param([switch]$Apply)
 
 $ErrorActionPreference = 'Stop'
@@ -11,88 +11,149 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $Root
 
 function Invoke-Docker {
-    # Array splatting sends positional items through the automatic args array.
-    # Do not declare a single string[] positional parameter: it can bind only
-    # the first splatted item under Windows PowerShell 5.1.
-    $Arguments = @($args)
-    & docker @Arguments
+    $DockerArgs = @($args)
+    & docker @DockerArgs
     if ($LASTEXITCODE -ne 0) {
-        throw "Docker command failed (exit=$LASTEXITCODE): docker $($Arguments -join ' ')"
+        throw ("Docker command exited with code {0}. Review the preceding Docker/psql error." -f $LASTEXITCODE)
     }
 }
 
-Write-Host '[1/5] Inspect known relation files (read-only)' -ForegroundColor Cyan
-$Inspect = @'
-SELECT x.filenode,
-       c.oid::regclass::text AS relation_name,
-       c.relkind,
+$InspectSQL = @'
+SELECT x.filenode, c.oid::regclass::text AS relation_name, c.relkind,
        pg_relation_filepath(c.oid) AS path
 FROM (VALUES (16391), (16398), (16412), (16414), (16424)) x(filenode)
 LEFT JOIN pg_class c ON c.oid = pg_filenode_relation(0, x.filenode);
 '@
-Invoke-Docker @('compose','exec','-T','postgres','psql',
-    '-U','scientific','-d','scientific_agent','-X','-v','ON_ERROR_STOP=1','-c',$Inspect)
 
 if (-not $Apply) {
-    Write-Host 'Inspection only. Nothing repaired. To apply, stop app services with -KeepDocker, then rerun with -Apply.'
+    Write-Host 'Inspection only: no data, image or index changes.' -ForegroundColor Cyan
+    Invoke-Docker @('compose','exec','-T','postgres','psql',
+        '-U','scientific','-d','scientific_agent','-X','-v','ON_ERROR_STOP=1',
+        '-c',$InspectSQL)
     return
 }
 
-# A live backend may continue querying damaged indexes; stop it before repair.
-$Listener = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
-    Select-Object -First 1
-if ($Listener) {
-    throw 'FastAPI is still listening on port 8000. Stop app services first: .\scripts\stop-dev.ps1 -KeepDocker'
+# The application's writes must stop before an offline copy and REINDEX.
+foreach ($Port in @(8000,5173)) {
+    $Listening = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($Listening) {
+        throw "Application port $Port is still listening. First run .\scripts\stop-dev.ps1 -KeepDocker"
+    }
 }
 
-Write-Host '[2/5] Verify index names and sequentially scan underlying table heaps' -ForegroundColor Cyan
-$IndexCheck = @'
-SELECT c.oid::regclass::text AS index_name, c.relkind,
-       c.relfilenode, i.indrelid::regclass::text AS indexed_table
-FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid
-WHERE c.oid IN ('public.molecules_pkey'::regclass,
-                'public.training_molecules_pkey'::regclass);
-'@
-Invoke-Docker @('compose','exec','-T','postgres','psql',
-    '-U','scientific','-d','scientific_agent','-X','-v','ON_ERROR_STOP=1','-c',$IndexCheck)
-$HeapCheck = @'
-BEGIN READ ONLY;
-SET LOCAL enable_indexscan = off;
-SET LOCAL enable_indexonlyscan = off;
-SET LOCAL enable_bitmapscan = off;
-SELECT COUNT(*) AS molecules_rows FROM public.molecules;
-SELECT COUNT(*) AS training_molecules_rows FROM public.training_molecules;
-ROLLBACK;
-'@
-Invoke-Docker @('compose','exec','-T','postgres','psql',
-    '-U','scientific','-d','scientific_agent','-X','-v','ON_ERROR_STOP=1','-c',$HeapCheck)
+# Resolve the *existing* Compose volume name. Never create a new, empty DB.
+$ContainerID = @(docker compose ps -a -q postgres | Where-Object { $_.Trim() } |
+    Select-Object -First 1)
+if ($LASTEXITCODE -ne 0 -or -not $ContainerID) {
+    throw 'Existing PostgreSQL container not found; aborting without changing storage.'
+}
+$ContainerID = [string]$ContainerID[0]
+$MountsJSON = docker inspect --format '{{json .Mounts}}' $ContainerID
+if ($LASTEXITCODE -ne 0 -or -not $MountsJSON) { throw 'Cannot inspect PostgreSQL volume.' }
+$DBMounts = @($MountsJSON | ConvertFrom-Json | Where-Object {
+    $_.Type -eq 'volume' -and $_.Destination -eq '/var/lib/postgresql/data'
+})
+if ($DBMounts.Count -ne 1 -or -not $DBMounts[0].Name) {
+    throw 'Expected one PostgreSQL named volume at /var/lib/postgresql/data; aborting.'
+}
+$VolumeName = [string]$DBMounts[0].Name
+$Image = [string](docker inspect --format '{{.Config.Image}}' $ContainerID)
+if ($LASTEXITCODE -ne 0 -or -not $Image -or $Image -notmatch '^postgres:16') {
+    throw 'Expected existing PostgreSQL 16 image; aborting.'
+}
 
-Write-Host '[3/5] Back up the entire database OUTSIDE the Git repository' -ForegroundColor Cyan
 $Stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
 $BackupDir = Join-Path (Split-Path $Root -Parent) 'scientific_agent_db_backups'
-New-Item -Path $BackupDir -ItemType Directory -Force | Out-Null
-$ContainerDump = "/tmp/scientific_agent_$Stamp.dump"
-$HostDump = Join-Path $BackupDir "scientific_agent_$Stamp.dump"
-Invoke-Docker @('compose','exec','-T','postgres','pg_dump',
-    '-U','scientific','-d','scientific_agent','-Fc','-f',$ContainerDump)
-Invoke-Docker @('compose','cp',"postgres:$ContainerDump",$HostDump)
-if (-not (Test-Path $HostDump) -or (Get-Item $HostDump).Length -lt 1024) {
-    throw 'Backup file missing or unexpectedly small. No REINDEX has been performed.'
-}
-# pg_restore --file=/dev/null reads/decompresses the archive without writing to the database.
-Invoke-Docker @('compose','exec','-T','postgres','pg_restore',
-    '--file=/dev/null',$ContainerDump)
-$Hash = (Get-FileHash -Path $HostDump -Algorithm SHA256).Hash
-Write-Host "Backup: $HostDump"
-Write-Host "Backup SHA256: $Hash"
-Write-Warning 'A successful logical dump is NOT proof that every PostgreSQL page is intact. Preserve the original Docker volume.'
+New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
+$ArchiveName = "pgdata_cold_$Stamp.tar"
+$ArchivePath = Join-Path $BackupDir $ArchiveName
+if (Test-Path $ArchivePath) { throw 'Backup archive name collision; aborting.' }
 
-Write-Host '[4/5] Require explicit index-rebuild consent' -ForegroundColor Yellow
-$Confirm = Read-Host 'Type exactly REINDEX to rebuild public.molecules_pkey and public.training_molecules_pkey'
+Write-Host "[1/5] Stop ONLY PostgreSQL for a consistent offline volume snapshot: $VolumeName" -ForegroundColor Cyan
+Invoke-Docker @('compose','stop','postgres')
+$Running = [string](docker inspect --format '{{.State.Running}}' $ContainerID)
+if ($LASTEXITCODE -ne 0 -or $Running.Trim() -ne 'false') {
+    throw 'PostgreSQL did not stop cleanly; no backup or index repair attempted.'
+}
+
+Write-Host "[2/5] Copy existing PostgreSQL volume to host backup: $ArchivePath" -ForegroundColor Cyan
+try {
+    # Reuse an already-present Postgres image; do not pull or reset images.
+    # Source mount is explicitly read-only; snapshot lives OUTSIDE this Git repo.
+    Invoke-Docker @('run','--rm','--network','none','--pull=never',
+        '--mount',"type=volume,source=$VolumeName,target=/source,readonly",
+        '--mount',"type=bind,source=$BackupDir,target=/backup",
+        $Image,'sh','-ec',"tar -C /source -cf /backup/$ArchiveName .; tar -tf /backup/$ArchiveName > /dev/null")
+} catch {
+    Write-Warning "Cold snapshot failed. PostgreSQL is STOPPED; no REINDEX performed. Error: $_"
+    throw
+}
+if (-not (Test-Path $ArchivePath) -or (Get-Item $ArchivePath).Length -lt 1024) {
+    throw 'Cold snapshot missing or suspiciously small. PostgreSQL remains stopped; no REINDEX performed.'
+}
+$Hash = (Get-FileHash -Path $ArchivePath -Algorithm SHA256).Hash
+Write-Host "Cold backup: $ArchivePath"
+Write-Host "SHA256: $Hash"
+Write-Warning 'The archive is verified as a readable TAR, NOT as a healthy PostgreSQL database. Keep it unchanged.'
+
+Write-Host '[3/5] Restart same existing PostgreSQL container; verify index identity' -ForegroundColor Cyan
+Invoke-Docker @('compose','up','-d','--no-recreate','postgres')
+$DBReady = $false
+for ($attempt = 1; $attempt -le 20; $attempt++) {
+    & docker compose exec -T postgres pg_isready -U scientific -d scientific_agent | Out-Null
+    if ($LASTEXITCODE -eq 0) { $DBReady = $true; break }
+    Start-Sleep -Seconds 1
+}
+if (-not $DBReady) { throw 'PostgreSQL did not become ready; no REINDEX performed.' }
+
+$IdentitySQL = @'
+SELECT c.relname, i.indrelid::regclass::text AS indexed_table, c.relkind
+FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid
+WHERE c.oid IN ('public.molecules_pkey'::regclass,
+                'public.training_molecules_pkey'::regclass)
+ORDER BY c.relname;
+'@
+$IndexRows = @(& docker compose exec -T postgres psql
+    -U scientific -d scientific_agent -X -v ON_ERROR_STOP=1 -At
+    -c $IdentitySQL)
+if ($LASTEXITCODE -ne 0 -or $IndexRows.Count -ne 2 -or
+    $IndexRows -notcontains 'molecules_pkey|molecules|i' -or
+    $IndexRows -notcontains 'training_molecules_pkey|training_molecules|i') {
+    throw 'Unexpected index identity. No REINDEX attempted.'
+}
+$IndexRows | ForEach-Object { Write-Host $_ }
+
+# The former COUNT(*) "heap check" has intentionally been removed:
+# it itself hit the broken index and prevented any backup from being made.
+Write-Host '[4/5] Optional logical dump (physical cold backup is already secured)' -ForegroundColor Cyan
+$DumpName = "scientific_agent_$Stamp.dump"
+$DumpInContainer = "/tmp/$DumpName"
+$DumpOnHost = Join-Path $BackupDir $DumpName
+$LogicalBackupOK = $false
+try {
+    Invoke-Docker @('compose','exec','-T','postgres','pg_dump',
+        '-U','scientific','-d','scientific_agent','-Fc','-f',$DumpInContainer)
+    Invoke-Docker @('compose','cp',"postgres:$DumpInContainer",$DumpOnHost)
+    if ((Get-Item $DumpOnHost).Length -lt 1024) { throw 'Logical dump unexpectedly small' }
+    Invoke-Docker @('compose','exec','-T','postgres','pg_restore',
+        '--file=/dev/null',$DumpInContainer)
+    $LogicalBackupOK = $true
+    Write-Host "Logical backup: $DumpOnHost"
+} catch {
+    Write-Warning "Logical dump could not be verified; possibly due to the damaged index. Error: $_"
+    Write-Warning 'Proceed ONLY if you accept the risk; the cold volume snapshot exists, but may contain corruption.'
+}
+Write-Host "Physical snapshot saved: $ArchivePath"
+Write-Host "Logical backup verified: $LogicalBackupOK"
+
+$Confirm = Read-Host 'Type exactly REINDEX to rebuild ONLY public.molecules_pkey and public.training_molecules_pkey (anything else stops)'
 if ($Confirm -cne 'REINDEX') {
-    Write-Host 'No indexes rebuilt; backup preserved.'
+    Write-Host 'No indexes rebuilt. Snapshot preserved.'
     return
 }
+
+Write-Host '[5/5] Rebuild only confirmed corrupt indexes; do not delete any data' -ForegroundColor Yellow
 Invoke-Docker @('compose','exec','-T','postgres','psql',
     '-U','scientific','-d','scientific_agent','-X','-v','ON_ERROR_STOP=1',
     '-c','REINDEX INDEX public.molecules_pkey;')
@@ -100,15 +161,15 @@ Invoke-Docker @('compose','exec','-T','postgres','psql',
     '-U','scientific','-d','scientific_agent','-X','-v','ON_ERROR_STOP=1',
     '-c','REINDEX INDEX public.training_molecules_pkey;')
 
-Write-Host '[5/5] Read-only smoke checks' -ForegroundColor Cyan
-$Smoke = @'
+# Query checks after repair can still fail if any other object is corrupt.
+$SmokeSQL = @'
 SELECT COUNT(*) AS molecules_rows FROM public.molecules;
 SELECT COUNT(*) AS training_molecules_rows FROM public.training_molecules;
 SELECT COUNT(*) AS joined_rows
 FROM public.training_molecules tm JOIN public.molecules m
-  ON m.molecule_id = tm.molecule_id;
+    ON m.molecule_id = tm.molecule_id;
 '@
 Invoke-Docker @('compose','exec','-T','postgres','psql',
-    '-U','scientific','-d','scientific_agent','-X','-v','ON_ERROR_STOP=1','-c',$Smoke)
-Write-Host 'Index rebuild checks passed. This does not prove other relations or the whole Agent are healthy.' -ForegroundColor Green
-Write-Host "Keep backup: $HostDump"
+    '-U','scientific','-d','scientific_agent','-X','-v','ON_ERROR_STOP=1','-c',$SmokeSQL)
+Write-Host 'Index rebuild and targeted query smoke checks passed.' -ForegroundColor Green
+Write-Host "Preserve snapshot for later recovery: $ArchivePath"
