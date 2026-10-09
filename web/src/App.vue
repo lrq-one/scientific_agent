@@ -8,6 +8,7 @@ import {
 import { createConversationLoader } from './conversationLoader'
 import { retryQueryForFailedTask } from './retryQuery'
 import { activeStatuses, hydrateConversationTasks, recordTaskEvent, taskStatusForConversation } from './executionState'
+import { buildStageSummary } from './executionStages'
 
 const conversationId = ref('')
 const conversations = ref([])
@@ -37,9 +38,10 @@ const pendingQuestion = ref('')
 const answer = ref('')
 const fileInput = ref(null)
 const timeline = ref(null)
-const traceOpen = ref(true)
+const traceOpen = ref(false)
 const folds = ref({ plan: true, evidence: true, artifacts: true })
 const trace = ref(emptyTrace())
+const stageSummary = computed(() => buildStageSummary(events.value, currentStatus.value))
 const readiness = ref({ status: 'checking', ready: false, components: {} })
 let sidebarTimer = null
 let readinessTimer = null
@@ -488,6 +490,12 @@ onUnmounted(() => {
         </section>
 
         <aside class="progress-panel">
+          <section class="stage-strip" aria-label="执行阶段">
+            <div v-for="stage in stageSummary" :key="stage.key" :class="['stage-item', `stage-${stage.state}`]">
+              <span class="stage-marker">{{ stage.state === 'completed' ? '✓' : stage.state === 'active' ? '•' : '○' }}</span>
+              <span>{{ stage.label }}</span>
+            </div>
+          </section>
           <div class="panel-title"><div><span class="live-dot"></span><b>执行轨迹</b></div><small>{{ busy ? 'LIVE' : 'READY' }}</small></div>
           <section class="trace-card"><button class="trace-toggle" @click="traceOpen = !traceOpen"><span>Agent Trace</span><i>{{ traceOpen ? '−' : '+' }}</i></button><div v-if="traceOpen" class="trace-body">
             <div v-if="conversationLoading" class="trace-loading"><i></i><i></i><i></i></div>

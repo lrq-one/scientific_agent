@@ -86,3 +86,19 @@ npm run build
 设计参考只读目录 `Aix-DB-master` 的 Excel、Text2SQL、DeepAgents、SSE、Skill loader 与 HITL 结构。上游 README 声明 Apache-2.0，但本地快照缺少根 `LICENSE` 文件，因此本项目没有批量复制源码，而是重写实现，并在 [AIX_DB_MIGRATION_MAP.md](docs/AIX_DB_MIGRATION_MAP.md) 记录映射。
 
 # scientific_agent
+
+## Current engineering delivery
+
+The reproducible benchmark and metric definitions live in
+[`evaluation/benchmark/`](evaluation/benchmark/) and
+[`docs/evaluation/optimization-benchmark.md`](docs/evaluation/optimization-benchmark.md).
+The benchmark replays committed A/B/C/D06/D09/M02/D08/HITL/RERUN/CANCEL
+acceptance evidence; missing token or latency data is reported as
+`not_measured`. `live_llm_manual` is opt-in and this branch has made no real
+Qwen/OpenAI request.
+
+Recent safety/efficiency work includes node-specific read-only context
+projection, versioned prompt contracts, Skill metadata caching, SQLCandidate
+lineage preservation, and a five-stage UI projection with an expandable raw
+developer trace. See [`docs/architecture/scientific-agent-architecture.md`](docs/architecture/scientific-agent-architecture.md)
+and [`docs/interview/scientific-agent-interview-guide.md`](docs/interview/scientific-agent-interview-guide.md).
