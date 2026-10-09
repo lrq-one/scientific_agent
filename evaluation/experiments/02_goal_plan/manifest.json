@@ -7,7 +7,7 @@
     "mechanism": "pre-immutable GoalContract implementation / legacy completion paths"
   },
   "optimized": {
-    "sha": "56fac82ab8f96d884820d3a23441bb9b6ac03624",
+    "sha": "f7e91885633c8637571de8b4848d05ce3c88e7af",
     "code_path": "app/agents/goal_contract.py; app/agents/plan_protocol.py; app/models/schemas.py"
   },
   "cases": {
