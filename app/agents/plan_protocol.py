@@ -71,6 +71,44 @@ def plan_action_signature(plan):
     return hashlib.sha256(json.dumps(sorted(contract(step) for step in plan)).encode()).hexdigest()
 
 
+def ensure_sql_schema_entrypoint(state, proposal, allowed_tools):
+    """Compile an executable schema prerequisite for a SQL-producing plan.
+
+    The LLM still chooses the analysis plan; the runtime owns mandatory tool
+    prerequisites. Never grant a tool outside the existing authorized catalog.
+    A valid, already-callable schema step is preserved without modification.
+    """
+    if state.schema_cache or not any(
+        "text_to_sql" in (step.selected_tools or step.preferred_tools)
+        for step in proposal
+    ):
+        return proposal
+    from app.agents.decision_node import eligible_call_tools
+    prospective = state.model_copy(update={"plan": proposal})
+    if {"get_table_schema", "search_schema"} & set(eligible_call_tools(prospective)):
+        return proposal
+    from app.models.schemas import PlanStep, Capability
+    authorized = [name for name in ("get_table_schema", "search_schema") if name in allowed_tools]
+    if not authorized or "database" not in state.available_tools:
+        raise ValueError("SQL plan needs inspected schema, but no authorized schema tool is available")
+    existing_ids = {step.step_id for step in proposal}
+    prerequisite_id = next((str(i) for i in range(1, 7) if str(i) not in existing_ids),
+                           "schema-prerequisite")
+    prerequisite = PlanStep(
+        step_id=prerequisite_id,
+        goal="Retrieve the authorized database schema before SQL generation",
+        selected_tools=authorized,
+        required_capabilities=[Capability.DATABASE],
+    )
+    repaired = [prerequisite]
+    for original in proposal:
+        step = original.model_copy(deep=True)
+        if "text_to_sql" in (step.selected_tools or step.preferred_tools):
+            step.depends_on = list(dict.fromkeys([*step.depends_on, prerequisite_id]))
+        repaired.append(step)
+    return repaired
+
+
 def prepare_replacement(state, plan):
     """Prepare copies only. Never trust LLM-supplied statuses or observations."""
     new_id = str(uuid.uuid4())
