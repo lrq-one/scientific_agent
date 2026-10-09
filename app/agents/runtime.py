@@ -531,13 +531,25 @@ class DecisionRuntime:
             return None
         step = eligible_steps[0] if eligible_steps else None
         names = eligible_call_tools(state)
-        successful_names = {
-            call.get("tool") for call, result in zip(state.tool_calls, state.observations)
-            if result.success
-        }
-        # Repeating a successful metadata call is not progress. A SQL tool is
-        # handled separately below because a new candidate/check is required.
-        names = [name for name in names if name not in successful_names]
+        def successful_in_context(name):
+            for call, result in zip(state.tool_calls, state.observations):
+                if not result.success or call.get("tool") != name:
+                    continue
+                # A SQL action may legitimately repeat for a different trusted
+                # Population, but never repeat for the same population (or an
+                # unbound no-plan run) after it has succeeded.
+                if name in {"text_to_sql", "query_checker", "execute_readonly_sql"}:
+                    if step is not None and step.population_id is not None:
+                        if call.get("population_id") == step.population_id:
+                            return True
+                        continue
+                    return True
+                return True
+            return False
+        # Repeating a successful metadata/file call is not progress. SQL calls
+        # are repeatable only when the installed step targets another trusted
+        # Population; this prevents an unplanned B/C run from looping forever.
+        names = [name for name in names if not successful_in_context(name)]
         candidate = self._trusted_candidate_payload(state, step.population_id if step else None)
         # Once authorized schema is actually present, SQL generation is the
         # only safe next stage for a database analysis with no candidate. Do
