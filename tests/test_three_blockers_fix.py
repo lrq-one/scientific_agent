@@ -278,10 +278,38 @@ def test_recorded_state_replay_no_execution_or_history_rewrite(case):
     state = ScientificAgentState.model_validate([e["payload_json"]["state"] for e in record["turns"][0]["events"] if e["event_type"] == "FINAL_ANSWER"][-1])
     identity = state.task_id, state.thread_id, state.conversation_id
     if case in {"D09", "D06"}:
-        proposal = AgentDecision.model_validate(next(e["payload_json"]["decision"] for e in record["turns"][0]["events"] if e["event_type"] == "AGENT_DECISION"))
+        proposal = AgentDecision.model_validate(next(
+            e["payload_json"]["decision"] for e in record["turns"][0]["events"]
+            if e["event_type"] == "AGENT_DECISION"
+        ))
         state.plan, state.schema_cache = [], {}
-        with pytest.raises(ValueError, match="schema|entrypoint"):
-            fake_runtime()._apply_plan(state, proposal, {})
+        original_evidence = list(state.evidence)
+        original_tool_calls = list(state.tool_calls)
+        original_observations = list(state.observations)
+        # The old contract rejected missing schema; the new contract must
+        # produce an authorized, reachable schema prerequisite instead.
+        fake_runtime()._apply_plan(state, proposal, {})
+        schema_steps = [
+            step for step in state.plan
+            if {"get_table_schema", "search_schema"} & set(step.selected_tools or step.preferred_tools)
+            and not step.depends_on
+        ]
+        sql_steps = [
+            step for step in state.plan
+            if "text_to_sql" in (step.selected_tools or step.preferred_tools)
+        ]
+        assert schema_steps and sql_steps
+        assert any(
+            schema_step.step_id in sql_step.depends_on
+            for schema_step in schema_steps for sql_step in sql_steps
+        )
+        assert all(set(step.selected_tools or step.preferred_tools) <= set(state.allowed_tools)
+                   for step in state.plan)
+        assert state.control_observations[-1]["success"] is True
+        assert state.evidence == original_evidence
+        assert state.tool_calls == original_tool_calls
+        assert state.observations == original_observations
+        assert not state.schema_cache
     elif case == "M02":
         assert ScientificAgent._evidence_quality_issues(state) == []
         assert {e.source_type for e in state.evidence} == {"file", "database"}
