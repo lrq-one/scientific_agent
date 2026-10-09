@@ -10,13 +10,19 @@ from app.services.object_storage import ObjectStorageService, PostgresFileMetada
 from app.services.workspace import WorkspaceService
 
 
-ADMIN_URL = os.getenv("TEST_CHECKPOINT_URL", "postgresql://scientific:scientific@127.0.0.1:55432/scientific_agent")
+ADMIN_URL = os.getenv("TEST_CHECKPOINT_URL")
+MINIO_ENDPOINT = os.getenv("TEST_MINIO_ENDPOINT")
+MINIO_ACCESS_KEY = os.getenv("TEST_MINIO_ACCESS_KEY", "minioadmin")
+MINIO_SECRET_KEY = os.getenv("TEST_MINIO_SECRET_KEY", "change-me")
+MINIO_BUCKET = os.getenv("TEST_MINIO_BUCKET", "scientific-agent-integration")
 
 
 def infrastructure_available() -> bool:
     try:
         from minio import Minio
-        Minio("127.0.0.1:9000", access_key="minioadmin", secret_key="change-me", secure=False).list_buckets()
+        if not ADMIN_URL or not MINIO_ENDPOINT:
+            return False
+        Minio(MINIO_ENDPOINT, access_key=MINIO_ACCESS_KEY, secret_key=MINIO_SECRET_KEY, secure=False).list_buckets()
         with psycopg.connect(ADMIN_URL, connect_timeout=2) as connection:
             connection.execute("SELECT 1")
         return True
@@ -29,8 +35,9 @@ def test_minio_upload_metadata_and_lazy_materialization(tmp_path: Path):
     from minio import Minio
     owner = f"owner-{uuid.uuid4().hex[:8]}"
     service = ObjectStorageService(
-        client=Minio("127.0.0.1:9000", access_key="minioadmin", secret_key="change-me", secure=False),
+        client=Minio(MINIO_ENDPOINT, access_key=MINIO_ACCESS_KEY, secret_key=MINIO_SECRET_KEY, secure=False),
         repository=PostgresFileMetadataRepository(ADMIN_URL),
+        bucket=MINIO_BUCKET,
         workspace=WorkspaceService(tmp_path),
     )
     payload = b"molecule_id,observed_rt,predicted_rt\nM1,1.0,1.1\n"

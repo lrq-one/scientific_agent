@@ -1,3 +1,19 @@
+import os
+
+# pytest is offline by default.  This is set before importing any app module so
+# app.config cannot load the developer `.env` and create real service clients.
+os.environ.setdefault("SCIENTIFIC_AGENT_TEST_PROFILE", "offline")
+if os.environ.get("SCIENTIFIC_AGENT_TEST_PROFILE", "").lower() == "offline":
+    for _key in (
+        "DATABASE_URL", "ADMIN_DATABASE_URL", "CHECKPOINT_DATABASE_URL",
+        "TEST_POSTGRES_URL", "TEST_CHECKPOINT_URL", "MINIO_ENDPOINT",
+        "TEST_MINIO_ENDPOINT", "TEST_MINIO_ACCESS_KEY", "TEST_MINIO_SECRET_KEY",
+        "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_BUCKET", "TEST_MINIO_BUCKET",
+        "LLM_API_KEY", "OPENAI_API_KEY",
+        "LLM_API_BASE", "OPENAI_API_BASE", "QWEN_API_KEY", "QWEN_BASE_URL",
+    ):
+        os.environ.pop(_key, None)
+
 import pytest
 
 from app.services.demo_data import ensure_demo_data

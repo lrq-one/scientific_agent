@@ -30,7 +30,13 @@ def _load_env_file(path: Path) -> None:
         os.environ.setdefault(key, value)
 
 
-_load_env_file(ROOT / ".env")
+# Test profiles must be explicit.  In particular, a plain pytest invocation
+# must not recover a developer `.env` and silently connect to the running
+# PostgreSQL/MinIO services.  Development/runtime processes retain the
+# historical opt-in `.env` loading behaviour.
+SCIENTIFIC_AGENT_TEST_PROFILE = os.getenv("SCIENTIFIC_AGENT_TEST_PROFILE", "").strip().lower()
+if SCIENTIFIC_AGENT_TEST_PROFILE not in {"offline", "integration_isolated"}:
+    _load_env_file(ROOT / ".env")
 
 WORKSPACE_ROOT = ROOT / "workspace"
 DEMO_DATA = ROOT / "data" / "demo"

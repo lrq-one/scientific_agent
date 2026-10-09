@@ -8,10 +8,12 @@ from app.tools.database_tools import DatabaseService
 from app.tools.sql_guard import SQLGuardError
 
 
-POSTGRES_URL = os.getenv("TEST_POSTGRES_URL", "postgresql://agent_reader:reader_demo@127.0.0.1:55432/scientific_agent")
+POSTGRES_URL = os.getenv("TEST_POSTGRES_URL")
 
 
 def postgres_available() -> bool:
+    if not POSTGRES_URL:
+        return False
     try:
         with psycopg.connect(POSTGRES_URL, connect_timeout=2) as connection:
             connection.execute("SELECT 1")

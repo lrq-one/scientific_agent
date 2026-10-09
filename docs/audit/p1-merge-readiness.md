@@ -14,7 +14,7 @@
 - P1/P0 专项回归：`84 passed / 9 skipped`（显式隔离外部服务的当前聚焦集合）。
 - LangGraph 无模型 E2E：`5 passed`（A/B/C/D06/RERUN/HITL）。
 - Python `compileall`、`git diff --check`：通过。
-- 受控全仓离线测试：`392 passed / 10 failed / 32 skipped`。失败逐项见 `p1-full-suite-failures.md`：9 条是未注入真实 Skill/Decision provider 的旧测试契约，1 条是直接调用 service 层却期待 HTTP SSE 的层级契约；数据库/持久化集成测试被显式隔离 profile 跳过。
+- 受控全仓离线测试：`390 passed / 10 failed / 38 skipped`。失败逐项见 `p1-full-suite-failures.md`：9 条是未注入真实 Skill/Decision provider 的旧测试契约，1 条是直接调用 service 层却期待 HTTP SSE 的层级契约；数据库/持久化集成测试和显式 integration module 被 profile 隔离跳过。
 - 原始 `408/18` 不能作为安全基线：它隐式恢复 `.env` checkpoint，并让部分测试连接默认 PostgreSQL；该事实已记录，没有把环境问题改写成生产成功。
 
 ## P0 安全边界

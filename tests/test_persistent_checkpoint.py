@@ -8,10 +8,12 @@ import pytest
 from app.services.checkpointing import CheckpointService
 
 
-CHECKPOINT_URL = os.getenv("TEST_CHECKPOINT_URL", "postgresql://scientific:scientific@127.0.0.1:55432/scientific_agent")
+CHECKPOINT_URL = os.getenv("TEST_CHECKPOINT_URL")
 
 
 def checkpoint_database_available() -> bool:
+    if not CHECKPOINT_URL:
+        return False
     try:
         with psycopg.connect(CHECKPOINT_URL, connect_timeout=2) as connection:
             connection.execute("SELECT 1")
