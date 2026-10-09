@@ -6,6 +6,8 @@ preliminary tool into completion of a multi-tool PlanStep.
 from __future__ import annotations
 
 import asyncio
+import threading
+from time import monotonic
 
 import pytest
 
@@ -53,7 +55,7 @@ def test_runtime_rejects_partial_completion_without_mutating_step():
     state = _state()
     decision = AgentDecision(action="FINISH", completed_step_ids=["1"])
     captured = []
-    config = {"configurable": {"_run": {"emit": captured.append}}}
+    config = {"configurable": {"_run": {"emit": captured.append, "cancel": threading.Event(), "deadline": monotonic() + 10}}}
     with pytest.raises(ValueError, match="completion condition not met"):
         runtime._validate_progress(state, decision, config)
     assert [s.status for s in state.plan] == ["running", "pending"]
@@ -68,7 +70,7 @@ def test_partial_dependency_cannot_be_bypassed_by_model_completion_hint():
         step_id="2", completed_step_ids=["1"],
     )
     captured = []
-    config = {"configurable": {"_run": {"emit": captured.append}}}
+    config = {"configurable": {"_run": {"emit": captured.append, "cancel": threading.Event(), "deadline": monotonic() + 10}}}
     with pytest.raises(ValueError, match="plan dependency not completed"):
         runtime._validate_progress(state, decision, config)
     assert [s.status for s in state.plan] == ["running", "pending"]
@@ -88,7 +90,7 @@ def test_validated_sql_observation_unlocks_dependent_execution_step():
         step_id="2", completed_step_ids=["1"],
     )
     captured = []
-    config = {"configurable": {"_run": {"emit": captured.append}}}
+    config = {"configurable": {"_run": {"emit": captured.append, "cancel": threading.Event(), "deadline": monotonic() + 10}}}
     runtime._validate_progress(state, decision, config)
     assert state.plan[0].status == "completed"
     assert state.plan[1].status == "running"
