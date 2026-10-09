@@ -121,6 +121,8 @@ def test_failed_rerun_with_no_new_evidence_does_not_reuse_historic_corruption_cl
     run.responses = SimpleNamespace(generate=lambda *args, **kwargs:
                                     (_ for _ in ()).throw(AssertionError("No paid model calls for no-Evidence failures")))
     state = _state()
+    # Finalize is only reachable from a terminal Decision in the real graph.
+    state.decision = AgentDecision(action="FINISH", reason_summary="planning failed")
     state.conversation_context = {"previous_provenance": {
         "errors": ["DataCorrupted: invalid page in old PostgreSQL index"]}}
     state.errors = ["Plan requires inspected schema"]
