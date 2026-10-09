@@ -35,8 +35,7 @@ def configured_llm(*, tokens: int = 2400):
 
 def eligible_plan_steps(state: ScientificAgentState):
     from app.agents.plan_protocol import satisfied
-    ready = {step.step_id for step in state.plan if step.status == "completed" or
-             (satisfied(step) if step.completion_condition else step.status == "running" and any(item.get("success") for item in step.observations))}
+    ready = {step.step_id for step in state.plan if satisfied(step)}
     return [step for step in state.plan if step.status in {"pending", "running", "blocked", "failed"}
             and set(step.depends_on) <= ready]
 
@@ -94,9 +93,7 @@ async def structured_call(schema, system: str, payload: dict[str, Any], *, tool_
         if action_names is not None:
             output_schema['properties']['action']['enum'] = action_names
         output_schema["properties"]["reason_summary"]["maxLength"] = 300
-        completed = [step.step_id for step in (plan or []) if step.status == "completed" or
-                     (satisfied(step) if step.completion_condition else
-                      any(item.get("success") for item in step.observations))]
+        completed = [step.step_id for step in (plan or []) if satisfied(step)]
         if completed:
             output_schema["properties"]["completed_step_ids"]["items"] = {"type": "string", "enum": completed}
         else:
