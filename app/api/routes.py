@@ -28,6 +28,7 @@ from app.services.followup import (
     ConversationContextResolver,
     StateSufficiencyResolver,
     build_provenance,
+    compose_followup_response,
     conversation_context_summary,
     workflow_query,
 )
@@ -35,7 +36,7 @@ from app.services.resources import ResourceService
 from app.services.runtime_health import runtime_readiness
 from app.services.workspace import WorkspaceError, WorkspaceService
 from app.services.object_storage import ObjectStorageService
-from app.services.grounded_response import GroundedResponseService
+from app.services.grounded_response import GroundedResponseService, GroundedResponseValidationError
 from app.services.evaluation_variant import VARIANT
 
 
@@ -433,14 +434,38 @@ async def conversation_chat_stream(
                     "decision_source": "state_sufficiency_resolver", "previous_task_id": provenance.previous_task_id}
                 repository.add_event(task_id, "AGENT_DECISION", {"message": "复用已有状态回答", **decision_data})
                 yield encode_sse(SSEEvent(event="AGENT_DECISION", message="复用已有状态回答", data=decision_data))
-                response, response_telemetry = await grounded_responses.followup(
-                    request.query, follow_up, provenance, sufficiency,
-                )
-                answer = response.answer
+                # An error-history question needs process records, not a new
+                # empirical claim or a model-authored Evidence ID.
+                error_only = (follow_up.interaction_type == "ERROR_QUESTION"
+                              and bool(follow_up.requested_content)
+                              and set(follow_up.requested_content) <= {"error", "uncertainty", "tools"})
+                if error_only:
+                    answer = compose_followup_response(follow_up, provenance, sufficiency)
+                    response_claims = []
+                    response_telemetry = {"llm_called": False, "fallback": False,
+                                          "reason_summary": "recorded process-error explanation"}
+                else:
+                    try:
+                        response, response_telemetry = await grounded_responses.followup(
+                            request.query, follow_up, provenance, sufficiency,
+                        )
+                        answer = response.answer
+                        response_claims = response.claims
+                    except GroundedResponseValidationError:
+                        # Preserve the rejected answer only in internal audit.
+                        # Never expose validator internals or present its
+                        # unsupported scientific assertions as a final answer.
+                        answer = ("历史回答没有通过持久化证据校验，当前无法提供可靠的科研结论。"
+                                  "本轮没有重新执行数据库或科研工具；请使用重新分析获取新的实际结果。")
+                        response_claims = []
+                        response_telemetry = {"fallback": True,
+                            "error_type": "GroundedResponseValidationError",
+                            "reason_summary": "historic reply did not pass evidence validation"}
+                
                 final_data = {
                     "answer": answer,
                     "llm_telemetry": response_telemetry,
-                    "state": {"claims": [claim.model_dump() for claim in response.claims],
+                    "state": {"claims": [claim.model_dump() for claim in response_claims],
                               "quality_status": "INSUFFICIENT_EVIDENCE" if sufficiency.missing_content else "PERSISTED_STATE_REUSE"},
                     "previous_task_id": provenance.previous_task_id,
                     "loaded_evidence_count": len(provenance.evidence),
