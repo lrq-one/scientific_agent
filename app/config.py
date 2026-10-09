@@ -57,7 +57,11 @@ ENABLE_DEMO_DATA = os.getenv(
 
 ALLOW_DETERMINISTIC_LLM_FALLBACK = os.getenv(
     "ALLOW_DETERMINISTIC_LLM_FALLBACK",
-    "true" if APP_MODE in {"development", "dev", "demo"} else "false",
+    # Explicit offline/isolated profiles must never silently fall back to a
+    # deterministic fixture when a provider is configured: tests should expose
+    # the blocked network or provider failure instead of simulating a model.
+    "false" if SCIENTIFIC_AGENT_TEST_PROFILE in {"offline", "integration_isolated"}
+    else ("true" if APP_MODE in {"development", "dev", "demo"} else "false"),
 ).strip().lower() in {"1", "true", "yes", "on"}
 
 MAX_REPLANS = int(os.getenv("MAX_REPLANS", "2"))

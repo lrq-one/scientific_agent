@@ -33,6 +33,16 @@ class SkillService:
     def __init__(self, root: Path = SKILLS_ROOT, llm: Any | None = None):
         self.root = root
         self.llm = llm
+        self._catalog_cache: list[dict] | None = None
+        self._catalog_fingerprint: tuple[tuple[str, int], ...] | None = None
+
+    def _catalog(self) -> list[dict]:
+        """Cache immutable Skill metadata while still noticing local edits."""
+        files = tuple((str(path), path.stat().st_mtime_ns) for path in sorted(self.root.glob("*/SKILL.md")))
+        if self._catalog_cache is None or files != self._catalog_fingerprint:
+            self._catalog_cache = self.load()
+            self._catalog_fingerprint = files
+        return self._catalog_cache
 
     def load(self) -> list[dict]:
         skills = []
@@ -52,7 +62,7 @@ class SkillService:
         """Deterministic fallback used only when semantic routing is unavailable."""
         goal_lower = goal.lower()
         scored = []
-        for skill in self.load():
+        for skill in self._catalog():
             if skill.get("name") == "scientific_result_summary":
                 continue
             if skill.get("requires_two_dataset_versions"):
@@ -113,7 +123,7 @@ class SkillService:
         current scale.
         """
 
-        catalog = self.load()
+        catalog = self._catalog()
         if task_type == "file_analysis" and re.search(r"多少行|几行|行数|列名|哪些列|row count|how many rows", goal, flags=re.I):
             return [], "direct_file_inspection", {"llm_called": False, "fallback": False}
         available = available_capabilities or set()
@@ -167,6 +177,9 @@ class SkillService:
             telemetry = {
                 "llm_called": True,
                 "fallback": False,
+                "candidate_count": len(candidates),
+                "catalog_chars": len(json.dumps([self._compact(item) for item in candidates], ensure_ascii=False)),
+                "prompt_chars": len(prompt),
                 "latency_ms": round((perf_counter() - started) * 1000, 2),
                 "model_configured": settings.model,
                 **collector.snapshot(),
@@ -181,6 +194,8 @@ class SkillService:
         return selected, "deterministic_fallback", {
             "llm_called": True,
             "fallback": True,
+            "candidate_count": len(candidates),
+            "prompt_chars": len(prompt),
             "latency_ms": round((perf_counter() - started) * 1000, 2),
             **collector.snapshot(),
         }
@@ -208,4 +223,4 @@ class SkillService:
         return "\n\n".join(blocks)
 
     def by_name(self) -> dict[str, dict]:
-        return {skill["name"]: skill for skill in self.load()}
+        return {skill["name"]: skill for skill in self._catalog()}

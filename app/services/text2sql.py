@@ -231,6 +231,7 @@ class TextToSQLService:
         query_scope=None,
         resource_binding=None,
     ) -> tuple[SQLCandidate, dict[str, Any]]:
+        from app.services.context_projection import text2sql_context
         relevant = self.retriever.retrieve((original_goal or "") + "\n" + goal, full_schema)
         if query_scope and (query_scope.dataset_version or query_scope.all_versions):
             for name in ("dataset_versions", "datasets", "training_memberships"):
@@ -261,8 +262,14 @@ class TextToSQLService:
                     ),
                     config={"callbacks": [collector]},
                 )
+                from app.services.prompt_contract import PROMPT_VERSIONS
                 metadata = {
+                    "prompt_contract_version": PROMPT_VERSIONS["text2sql"],
                     "generator": "llm_structured_output", "relevant_tables": list(relevant),
+                    "context_ledger": text2sql_context(goal=goal, query_scope=query_scope,
+                                                        resource_binding=resource_binding,
+                                                        schema=relevant, relationships=relationships,
+                                                        repair_feedback=repair_feedback).ledger,
                     "llm_telemetry": {
                         "llm_called": True, "model_configured": llm_settings().model,
                         "latency_ms": round((perf_counter() - started) * 1000, 2),
@@ -323,7 +330,12 @@ class TextToSQLService:
             params=params,
             reason=fallback_reason,
         )
-        return candidate, {"generator": "deterministic_fixture_fallback", "relevant_tables": list(relevant),
+        from app.services.prompt_contract import PROMPT_VERSIONS
+        return candidate, {"generator": "deterministic_fixture_fallback", "prompt_contract_version": PROMPT_VERSIONS["text2sql"], "relevant_tables": list(relevant),
+                           "context_ledger": text2sql_context(goal=goal, query_scope=query_scope,
+                                                               resource_binding=resource_binding,
+                                                               schema=relevant, relationships=relationships,
+                                                               repair_feedback=repair_feedback).ledger,
                            "sql_candidate_status": "generated",
                            "llm_telemetry": failure_telemetry}
 
