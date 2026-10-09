@@ -20,6 +20,7 @@ from app.models.schemas import (
     ResourceSummary,
     ScientificAgentState,
     ToolResult,
+    GoalContract,
 )
 
 
@@ -169,3 +170,10 @@ def test_removing_core_evidence_changes_contract_based_goal_coverage():
     state.evidence.clear()
     state.observations.clear()
     assert assess_goal_coverage(state).status == "UNVERIFIABLE"
+
+
+def test_unfrozen_contract_cannot_be_mutated_by_a_normal_runtime_path():
+    state = _file_state()
+    state.goal_contract = GoalContract(original_request=state.user_request, frozen=False)
+    with pytest.raises(ValueError, match="immutable"):
+        ensure_goal_contract(state)

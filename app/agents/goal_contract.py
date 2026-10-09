@@ -101,6 +101,8 @@ def ensure_goal_contract(state: ScientificAgentState) -> GoalContract:
             required_deliverables=_explicit_deliverables(state, text, sources),
         )
         state.goal_contract_history = []
+    elif not state.goal_contract.frozen:
+        raise ValueError("GoalContract is immutable outside an explicit HITL revision")
     _sync_legacy_fields(state)
     return state.goal_contract
 
