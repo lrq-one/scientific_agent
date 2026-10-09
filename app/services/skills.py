@@ -177,6 +177,8 @@ class SkillService:
         available = available_capabilities or set()
         candidates = []
         for skill in catalog:
+            if not skill.get("enabled", True) or skill.get("deprecated", False):
+                continue
             if skill.get("name") == "scientific_result_summary":
                 continue
             required = {str(item) for item in skill.get("required_capabilities", [])}
