@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from app.agents.runtime import DecisionRuntime
-from app.models.schemas import ScientificAgentState, ToolResult
+from app.models.schemas import PlanStep, ScientificAgentState, ToolResult
 from app.tools.registry import ToolRegistry
 
 
@@ -88,3 +88,18 @@ def test_deterministic_executor_keeps_auditable_decision_source_contract():
     state.observations = [ToolResult(success=True, data=[{"table": "molecules"}])]
     decision = runtime._deterministic_decision(state, {"configurable": {}})
     assert decision.reason_summary.startswith("deterministic_executor")
+
+
+def test_completed_plan_is_a_hard_boundary_for_deterministic_executor():
+    runtime = _runtime()
+    state = _database_state()
+    state.plan = [
+        PlanStep(
+            step_id="1", goal="schema", allowed_tools=["search_schema"], status="completed",
+            observations=[{"tool": "search_schema", "success": True}],
+        )
+    ]
+    # No global metadata tool may be selected after the installed plan has
+    # satisfied all of its steps; doing so would emit a CALL_TOOL without a
+    # plan step and turn a successful run into a validation failure.
+    assert runtime._deterministic_decision(state, {"configurable": {}}) is None

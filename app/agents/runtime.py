@@ -521,6 +521,12 @@ class DecisionRuntime:
         """Return a safe next CALL_TOOL only when the action and inputs are unique."""
         from app.agents.decision_node import eligible_call_tools, eligible_plan_steps
         eligible_steps = eligible_plan_steps(state) if state.plan else []
+        # An installed plan is the execution boundary.  Once every step is
+        # satisfied there is no deterministic action left to execute; falling
+        # back to the global resource tool set here could emit a CALL_TOOL
+        # without a step_id and poison an otherwise successful run.
+        if state.plan and not eligible_steps:
+            return None
         if state.plan and len(eligible_steps) != 1:
             return None
         step = eligible_steps[0] if eligible_steps else None
