@@ -436,6 +436,7 @@ async def conversation_chat_stream(
                 yield encode_sse(SSEEvent(event="AGENT_DECISION", message="复用已有状态回答", data=decision_data))
                 # An error-history question needs process records, not a new
                 # empirical claim or a model-authored Evidence ID.
+                reply_validation_failed = False
                 error_only = (follow_up.interaction_type == "ERROR_QUESTION"
                               and bool(follow_up.requested_content)
                               and set(follow_up.requested_content) <= {"error", "uncertainty", "tools"})
@@ -452,6 +453,7 @@ async def conversation_chat_stream(
                         answer = response.answer
                         response_claims = response.claims
                     except GroundedResponseValidationError:
+                        reply_validation_failed = True
                         # Preserve the rejected answer only in internal audit.
                         # Never expose validator internals or present its
                         # unsupported scientific assertions as a final answer.
@@ -466,7 +468,7 @@ async def conversation_chat_stream(
                     "answer": answer,
                     "llm_telemetry": response_telemetry,
                     "state": {"claims": [claim.model_dump() for claim in response_claims],
-                              "quality_status": "INSUFFICIENT_EVIDENCE" if sufficiency.missing_content else "PERSISTED_STATE_REUSE"},
+                              "quality_status": "INSUFFICIENT_EVIDENCE" if (sufficiency.missing_content or reply_validation_failed) else "PERSISTED_STATE_REUSE"},
                     "previous_task_id": provenance.previous_task_id,
                     "loaded_evidence_count": len(provenance.evidence),
                     "provenance_source": "postgres" if previous_context else "none",
