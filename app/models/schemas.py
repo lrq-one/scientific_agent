@@ -106,6 +106,24 @@ class CompletionCondition(BaseModel):
     require_scope_match: bool = False
 
 
+class RecoveryPolicy(BaseModel):
+    """Structured, bounded recovery instruction attached to a failure."""
+
+    failure_code: str
+    failed_stage: str = "tool_execution"
+    recoverable: bool = False
+    recovery_action: Literal[
+        "repair_arguments", "retrieve_schema", "establish_sql_candidate",
+        "targeted_sql_repair", "safe_reject", "bounded_retry",
+        "repair_plan_dependency", "stop", "ask_user", "localized_repair",
+        "no_progress_stop",
+    ] = "safe_reject"
+    retry_budget: int = Field(default=0, ge=0, le=3)
+    context: dict[str, Any] = Field(default_factory=dict)
+    previous_attempt: dict[str, Any] = Field(default_factory=dict)
+    strategy_changed: bool = False
+
+
 class SQLCandidate(BaseModel):
     sql: str
     params: dict[str, Any] = Field(default_factory=dict)
@@ -202,7 +220,7 @@ class PlanStep(BaseModel):
     population_id: str | None = None
     completion_condition: CompletionCondition | None = None
     completion_predicate: CompletionCondition | None = None
-    recovery_policy: dict[str, Any] = Field(default_factory=dict)
+    recovery_policy: RecoveryPolicy | None = None
     completion_evidence: list[str] = Field(default_factory=list)
     observations: list[dict[str, Any]] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
@@ -317,6 +335,8 @@ class ScientificAgentState(BaseModel):
     decision_valid: bool = True
     decision_telemetry: dict[str, Any] = Field(default_factory=dict)
     control_observations: list[dict[str, Any]] = Field(default_factory=list)
+    recovery_policy: RecoveryPolicy | None = None
+    recovery_history: list[RecoveryPolicy] = Field(default_factory=list)
     tool_cache: dict[str, ToolResult] = Field(default_factory=dict)
     hitl_answers: list[dict[str, str]] = Field(default_factory=list)
     task_id: str | None = None

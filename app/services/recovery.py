@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
 from pydantic import BaseModel
+from app.models.schemas import RecoveryPolicy
 from app.tools.sql_guard import SQLGuardError
 
 
@@ -22,6 +23,63 @@ class RecoveryDecision(BaseModel):
     action: Action
     reason: str
     max_attempts: int = 1
+
+
+def recovery_policy_for(
+    failure_code: str | None,
+    *,
+    failed_stage: str = "tool_execution",
+    recoverable: bool | None = None,
+    context: dict[str, Any] | None = None,
+    previous_attempt: dict[str, Any] | None = None,
+) -> RecoveryPolicy:
+    """Map every runtime failure to one bounded, auditable action.
+
+    This is deliberately deterministic. It complements (rather than replaces)
+    the existing ``classify_failure`` API used by the legacy executor.
+    """
+    code = str(failure_code or "EXECUTION_FAILED").upper()
+    mapping: dict[str, tuple[str, int, bool]] = {
+        "INVALID_ARGUMENT": ("repair_arguments", 1, True),
+        "INVALID_ARGUMENTS": ("repair_arguments", 1, True),
+        "MISSING_INPUT": ("repair_arguments", 1, True),
+        "SCHEMA_MISMATCH": ("retrieve_schema", 1, True),
+        "SCHEMA_NOT_FOUND": ("retrieve_schema", 1, True),
+        "SQL_CANDIDATE_LINEAGE": ("establish_sql_candidate", 1, True),
+        "NO_TRUSTED_SQL_CANDIDATE": ("establish_sql_candidate", 1, True),
+        "UNVERIFIED_SCOPE": ("targeted_sql_repair", 1, True),
+        "SCOPE_VIOLATION": ("safe_reject", 0, False),
+        "TIMEOUT": ("bounded_retry", 1, True),
+        "RATE_LIMIT": ("bounded_retry", 1, True),
+        "TRANSIENT_IO": ("bounded_retry", 1, True),
+        "TOOL_UNAVAILABLE": ("bounded_retry", 1, True),
+        "PLAN_DEPENDENCY": ("repair_plan_dependency", 1, True),
+        "PLAN_REJECTED": ("repair_plan_dependency", 1, True),
+        "NO_PROGRESS_REPLAN": ("no_progress_stop", 0, False),
+        "DATABASE_STORAGE_CORRUPTION": ("stop", 0, False),
+        "USER_INPUT_REQUIRED": ("ask_user", 0, True),
+        "RESOURCE_NOT_FOUND": ("ask_user", 0, True),
+        "ARTIFACT_FAILURE": ("safe_reject", 0, False),
+    }
+    action, budget, default_recoverable = mapping.get(code, ("safe_reject", 0, False))
+    effective_recoverable = default_recoverable if recoverable is None else bool(recoverable)
+    if action in {"safe_reject", "stop", "no_progress_stop"}:
+        effective_recoverable = False
+    # A policy may only carry a retry budget when the failure is explicitly
+    # recoverable; this prevents an upstream boolean from enabling unsafe
+    # retries for scope violations or storage corruption.
+    if not effective_recoverable:
+        budget = 0
+    return RecoveryPolicy(
+        failure_code=code,
+        failed_stage=failed_stage,
+        recoverable=effective_recoverable,
+        recovery_action=action,
+        retry_budget=budget,
+        context=dict(context or {}),
+        previous_attempt=dict(previous_attempt or {}),
+        strategy_changed=action not in {"bounded_retry", "safe_reject", "stop", "no_progress_stop"},
+    )
 
 
 def classify_failure(error: Exception | str, *, tool: str) -> RecoveryDecision:

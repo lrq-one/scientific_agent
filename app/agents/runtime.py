@@ -29,6 +29,7 @@ from app.agents.goal_contract import (accept_population_requirements, apply_deci
                                       ensure_goal_contract, revise_from_hitl)
 from app.services.query_scope import ScopeViolation, UnverifiedScope, validate_scope
 from app.services.database_errors import is_database_storage_corruption
+from app.services.recovery import recovery_policy_for
 
 
 NO_PROGRESS_REPLAN_LIMIT = 2
@@ -702,16 +703,24 @@ class DecisionRuntime:
             result.failed_stage = result.failed_stage or "tool_execution"
             result.recoverable = bool(result.recoverable)
             result.reason_summary = result.reason_summary or result.error or result.exception_type or "tool execution failed"
+            policy = recovery_policy_for(
+                result.failure_code,
+                failed_stage=result.failed_stage,
+                recoverable=result.recoverable,
+                context={
+                    "query_scope": state.query_scope.model_dump(mode="json"),
+                    "population_id": population_id,
+                    "plan_id": state.plan_id,
+                },
+                previous_attempt={"tool": name, "tool_call_id": call_id},
+            )
+            result.metadata["recovery_policy"] = policy.model_dump(mode="json")
             result.metadata["failure_telemetry"] = {
                 "failure_code": result.failure_code, "failed_stage": result.failed_stage,
                 "recoverable": result.recoverable, "plan_id": state.plan_id, "tool_name": name,
                 "exception_type": result.exception_type, "reason_summary": result.reason_summary,
-                "recovery_action": ("targeted_sql_repair" if result.failure_code == "UNVERIFIED_SCOPE" else
-                                    "reject_scope_violation" if result.failure_code == "SCOPE_VIOLATION" else
-                                    "repair_arguments_or_stop" if result.failure_code == "INVALID_ARGUMENT" else
-                                    "stop_storage_retry" if result.failure_code == "DATABASE_STORAGE_CORRUPTION" else
-                                    "bounded_retry" if result.recoverable else "stop"),
-                "retry_budget": (SCOPE_REPAIR_LIMIT if result.failure_code == "UNVERIFIED_SCOPE" else 0),
+                "recovery_action": policy.recovery_action,
+                "retry_budget": policy.retry_budget,
                 "retry_count": sum(1 for call, prior in zip(state.tool_calls, state.observations)
                                    if call.get("tool") == name and not prior.success),
                 "replan_count": state.replan_count,
@@ -749,6 +758,25 @@ class DecisionRuntime:
             state.no_progress_replan_count = 0
         if not result.success:
             state.errors.append(result.error or "tool failed")
+            raw_policy = result.metadata.get("recovery_policy")
+            policy = recovery_policy_for(
+                result.failure_code,
+                failed_stage=result.failed_stage or "tool_execution",
+                recoverable=result.recoverable,
+                context={
+                    "query_scope": call.get("query_scope") or state.query_scope.model_dump(mode="json"),
+                    "population_id": call.get("population_id"),
+                    "plan_id": call.get("plan_id"),
+                },
+                previous_attempt={
+                    "tool": call.get("tool"),
+                    "tool_call_id": call.get("tool_call_id"),
+                    "metadata": raw_policy or {},
+                },
+            )
+            state.recovery_policy = policy
+            state.recovery_history.append(policy)
+            result.metadata["recovery_policy"] = policy.model_dump(mode="json")
             if result.failure_code == "DATABASE_STORAGE_CORRUPTION":
                 issue = "PostgreSQL datasource storage is damaged or unreadable; stop SQL retries and inspect the database"
                 if issue not in state.blocking_issues:
