@@ -1,0 +1,6 @@
+{
+  "findings": [
+    "Current runtime freezes user goals and rejects plan-only obligations.",
+    "Independent semantic false-success measurement is still required before claiming improvement."
+  ]
+}

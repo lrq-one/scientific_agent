@@ -1,0 +1,37 @@
+{
+  "schema_version": "scientific-agent-six-track-v1",
+  "track_id": "05_evidence_artifact",
+  "title": "Evidence + Artifact",
+  "baseline": {
+    "sha": "1802835",
+    "mechanism": "pre-evidence/artifact guard lineage"
+  },
+  "optimized": {
+    "sha": "56fac82ab8f96d884820d3a23441bb9b6ac03624",
+    "code_path": "app/services/grounded_response.py; app/services/artifacts.py"
+  },
+  "cases": {
+    "count": 34,
+    "path": "cases.jsonl",
+    "sha256": "1c5fc72d6dd80280d1cce1542ffebec64143cf39450b03037bb2d46fcbfaa53c",
+    "source": "evaluation/benchmark/cases_extended.jsonl"
+  },
+  "gold": {
+    "path": "gold.jsonl",
+    "sha256": "76f9642fff1089bd298bf639e1f02ea329c589cd2efa660eb44c651fe676fda6",
+    "provenance": "source fixture review_status; independent label provenance retained in source file",
+    "split": "replay_protocol"
+  },
+  "environment": {
+    "provider": "offline_or_historical_reference",
+    "database_writes": false,
+    "minio_writes": false,
+    "frozen_outputs_modified": false,
+    "model_calls_this_batch": 0
+  },
+  "measurement_policy": "Existing grounded-response and isolated MinIO tests are the evidence. Artifact byte hashes/columns are now persisted in generated artifact metadata; no production object was touched.",
+  "limitations": [
+    "Independent 34-case evidence claim adjudication is not measured in this batch.",
+    "MinIO verification metrics remain isolated-test only."
+  ]
+}

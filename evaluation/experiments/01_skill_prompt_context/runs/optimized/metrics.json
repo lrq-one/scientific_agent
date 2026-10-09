@@ -1,0 +1,11 @@
+{
+  "measurement_status": "offline_current_code_not_paired",
+  "source": "tests/test_six_track_protocols.py",
+  "routing_calls": "not_measured",
+  "context_compression_ratio": "not_measured",
+  "track_id": "01_skill_prompt_context",
+  "run_label": "optimized",
+  "case_count": 150,
+  "cases_sha256": "c624b1854a96bfd96aa1a150c3d2339efc881851cf9bfc68417aa860d8c117d9",
+  "gold_sha256": "a00898f7dba6db86fa0dd27c6e8d62caf8c59fecef1f1e0e7de9ea0829c251fd"
+}

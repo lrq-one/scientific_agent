@@ -1,0 +1,8 @@
+{
+  "status": "planned",
+  "variants": [
+    "GoalContract only",
+    "GoalContract+PlanStep",
+    "negative Evidence deletion"
+  ]
+}

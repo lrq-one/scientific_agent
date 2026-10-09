@@ -1,0 +1,14 @@
+{
+  "measurement_status": "historical_reference",
+  "source": "evaluation/runs/skill_dev_s0_all9/metrics.json",
+  "cases": 100,
+  "top1_accuracy": 1.0,
+  "macro_f1": 0.8935927419,
+  "total_tokens": 273820,
+  "p95_latency_ms": 27197.111999999997,
+  "track_id": "01_skill_prompt_context",
+  "run_label": "baseline",
+  "case_count": 150,
+  "cases_sha256": "c624b1854a96bfd96aa1a150c3d2339efc881851cf9bfc68417aa860d8c117d9",
+  "gold_sha256": "a00898f7dba6db86fa0dd27c6e8d62caf8c59fecef1f1e0e7de9ea0829c251fd"
+}

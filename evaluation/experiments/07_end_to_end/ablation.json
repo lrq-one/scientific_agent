@@ -1,0 +1,6 @@
+{
+  "status": "real_qwen_reference",
+  "source": "evaluation/benchmark/runs/ablation-no-skill-20261010-2/metrics.json",
+  "strict_task_success": 0.7,
+  "provider_calls": 58
+}

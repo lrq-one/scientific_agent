@@ -1,0 +1,6 @@
+{
+  "findings": [
+    "Unsupported claims are rejected by persisted Evidence IDs.",
+    "A failed export remains non-artifact; generated outputs now carry byte and column metadata for verification."
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "measurement_status": "real_qwen_reference",
+  "source": "evaluation/benchmark/runs/optimized-live-20261010/metrics.json",
+  "strict_task_success": 0.7,
+  "provider_calls": 58,
+  "p95_latency_ms": 22928.77,
+  "track_id": "07_end_to_end",
+  "run_label": "optimized",
+  "case_count": 34,
+  "cases_sha256": "1c5fc72d6dd80280d1cce1542ffebec64143cf39450b03037bb2d46fcbfaa53c",
+  "gold_sha256": "76f9642fff1089bd298bf639e1f02ea329c589cd2efa660eb44c651fe676fda6"
+}

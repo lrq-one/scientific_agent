@@ -1,0 +1,5 @@
+{
+  "status": "historical_reference",
+  "source": "evaluation/runs/text2sql_dev_q3_repair_q1_bm25_failures_output_contract_v2/metrics.json",
+  "repair_success_rate": 0.0
+}

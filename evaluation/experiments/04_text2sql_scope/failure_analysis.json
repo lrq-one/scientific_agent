@@ -1,0 +1,6 @@
+{
+  "findings": [
+    "UNVERIFIED_SCOPE is distinct from SCOPE_VIOLATION and remains a safe rejection.",
+    "model_run→experiment→dataset_version and training_memberships→dataset_version are now audited before recommending independent populations."
+  ]
+}

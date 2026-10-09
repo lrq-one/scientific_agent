@@ -1,0 +1,11 @@
+{
+  "measurement_status": "offline_contract_tests",
+  "goal_contract_tests": "passed",
+  "planstep_tests": "passed",
+  "false_success_rate": "not_measured",
+  "track_id": "02_goal_plan",
+  "run_label": "optimized",
+  "case_count": 34,
+  "cases_sha256": "1c5fc72d6dd80280d1cce1542ffebec64143cf39450b03037bb2d46fcbfaa53c",
+  "gold_sha256": "76f9642fff1089bd298bf639e1f02ea329c589cd2efa660eb44c651fe676fda6"
+}

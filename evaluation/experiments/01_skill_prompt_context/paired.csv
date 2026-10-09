@@ -1,0 +1,2 @@
+metric,baseline,optimized,delta,status,source
+top1_accuracy,1.0,not_measured,not_measured,not_comparable,historical vs current

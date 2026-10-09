@@ -1,0 +1,5 @@
+{
+  "status": "historical_reference",
+  "source": "evaluation/runs/skill_test_s0_all9_nothinking/metrics.json",
+  "no_skill_live": "evaluation/benchmark/results/live/live_comparison.json"
+}

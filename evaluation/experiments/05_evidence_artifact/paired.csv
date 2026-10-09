@@ -1,0 +1,2 @@
+metric,baseline,optimized,delta,status,source
+artifact_hash_manifest,absent,present,protocol improvement,code_inspection,app/services/artifacts.py

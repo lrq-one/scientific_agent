@@ -1,0 +1,37 @@
+{
+  "schema_version": "scientific-agent-six-track-v1",
+  "track_id": "03_recovery_executor",
+  "title": "RecoveryPolicy + Deterministic Executor",
+  "baseline": {
+    "sha": "d0a9d6b",
+    "mechanism": "unified recovery was not yet bounded by current failure codes"
+  },
+  "optimized": {
+    "sha": "56fac82ab8f96d884820d3a23441bb9b6ac03624",
+    "code_path": "app/services/recovery.py; app/agents/runtime.py"
+  },
+  "cases": {
+    "count": 30,
+    "path": "cases.jsonl",
+    "sha256": "2763ae64dca24a113445d2b07c6b8790e7175b39ef971075e49930f8b61e8832",
+    "source": "evaluation/v2/scenario_cases.jsonl"
+  },
+  "gold": {
+    "path": "gold.jsonl",
+    "sha256": "94822e5819f2fb0b709209b66a75f752bd4acd1c9ec525be8aaf424719cd26c0",
+    "provenance": "source fixture review_status; independent label provenance retained in source file",
+    "split": "dev_draft_protocol"
+  },
+  "environment": {
+    "provider": "offline_or_historical_reference",
+    "database_writes": false,
+    "minio_writes": false,
+    "frozen_outputs_modified": false,
+    "model_calls_this_batch": 0
+  },
+  "measurement_policy": "Fault-injection coverage is represented by existing tests and C live traces. No new Qwen or database run was executed.",
+  "limitations": [
+    "scenario_cases labels are agent_drafted and not a frozen holdout.",
+    "Recovery latency/cost distributions are not measured for this package."
+  ]
+}

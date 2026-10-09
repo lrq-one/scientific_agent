@@ -1,0 +1,37 @@
+{
+  "schema_version": "scientific-agent-six-track-v1",
+  "track_id": "06_hitl_sse",
+  "title": "HITL + Checkpoint + SSE",
+  "baseline": {
+    "sha": "3ed25de",
+    "mechanism": "pre-durable HITL/SSE lifecycle"
+  },
+  "optimized": {
+    "sha": "56fac82ab8f96d884820d3a23441bb9b6ac03624",
+    "code_path": "app/services/checkpointing.py; app/api/routes.py; web/src/executionState.js; web/src/executionStages.js"
+  },
+  "cases": {
+    "count": 20,
+    "path": "cases.jsonl",
+    "sha256": "9ffd7a49d6d6202c1c08ca5ef2c609a889d6dba15e553e6f652f9797b1fb4832",
+    "source": "evaluation/e2e/cases.jsonl"
+  },
+  "gold": {
+    "path": "gold.jsonl",
+    "sha256": "77450fff15113cbcf6e0c564138c0841a72085eb275fbe62c6e23813bdfed79e",
+    "provenance": "source fixture review_status; independent label provenance retained in source file",
+    "split": "isolated_e2e_source_fixture"
+  },
+  "environment": {
+    "provider": "offline_or_historical_reference",
+    "database_writes": false,
+    "minio_writes": false,
+    "frozen_outputs_modified": false,
+    "model_calls_this_batch": 0
+  },
+  "measurement_policy": "Backend isolated integration and frontend/browser tests are preserved. A new reconnect/fault-point distribution is not measured.",
+  "limitations": [
+    "The source E2E set has 20 cases, below the preferred 30–50; this is reported rather than padded with duplicates.",
+    "Browser opt-in tests are not claimed as run when skipped by environment."
+  ]
+}

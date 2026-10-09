@@ -1,0 +1,8 @@
+{
+  "status": "planned",
+  "variants": [
+    "evidence gate on",
+    "evidence gate off",
+    "artifact bytes tampered"
+  ]
+}

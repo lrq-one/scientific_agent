@@ -1,0 +1,6 @@
+{
+  "findings": [
+    "C now records diagnostic candidate, scope reason and one directed repair budget.",
+    "No-progress termination is enforced, but full fault-injection matrix still needs a dedicated runner."
+  ]
+}

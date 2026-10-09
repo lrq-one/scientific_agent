@@ -1,0 +1,12 @@
+{
+  "measurement_status": "isolated_e2e_and_frontend_tests",
+  "backend_integration_cases": 13,
+  "frontend_unit_cases": 21,
+  "browser_e2e": "1 passed, 2 skipped",
+  "reconnect_dedup": "not_measured",
+  "track_id": "06_hitl_sse",
+  "run_label": "optimized",
+  "case_count": 20,
+  "cases_sha256": "9ffd7a49d6d6202c1c08ca5ef2c609a889d6dba15e553e6f652f9797b1fb4832",
+  "gold_sha256": "77450fff15113cbcf6e0c564138c0841a72085eb275fbe62c6e23813bdfed79e"
+}

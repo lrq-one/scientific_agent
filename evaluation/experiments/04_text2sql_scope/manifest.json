@@ -1,0 +1,37 @@
+{
+  "schema_version": "scientific-agent-six-track-v1",
+  "track_id": "04_text2sql_scope",
+  "title": "Text2SQL + QueryScope",
+  "baseline": {
+    "sha": "d4b3a65",
+    "mechanism": "pre-lineage QueryScope/SQLCandidate recovery"
+  },
+  "optimized": {
+    "sha": "56fac82ab8f96d884820d3a23441bb9b6ac03624",
+    "code_path": "app/services/text2sql.py; app/services/query_scope.py; app/services/query_decomposition.py"
+  },
+  "cases": {
+    "count": 100,
+    "path": "cases.jsonl",
+    "sha256": "7a4f8652d5d2b610310e3cae21c8dc7a3cdc4c7ad5f934aa836da3b8b55e59b7",
+    "source": "evaluation/text2sql/cases.jsonl"
+  },
+  "gold": {
+    "path": "gold.jsonl",
+    "sha256": "e7f044d6449236b0106832ee2690e486e9ef85160be1a895dbdf9dbcb0b7d7cb",
+    "provenance": "source fixture review_status; independent label provenance retained in source file",
+    "split": "dev+test_source_fixture"
+  },
+  "environment": {
+    "provider": "historical_qwen_and_isolated_postgres_references",
+    "database_writes": false,
+    "minio_writes": false,
+    "frozen_outputs_modified": false,
+    "model_calls_this_batch": 0
+  },
+  "measurement_policy": "Existing 70-case Qwen Text2SQL and focused C live runs are preserved. New decomposition/lineage checks are offline only; no scope relaxation or database writes.",
+  "limitations": [
+    "C remains a safe UNVERIFIED_SCOPE rejection in the focused live trace.",
+    "Complex JOIN proof coverage needs additional independently labeled SQL cases."
+  ]
+}

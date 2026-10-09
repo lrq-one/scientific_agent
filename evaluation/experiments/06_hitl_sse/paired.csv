@@ -1,0 +1,2 @@
+metric,baseline,optimized,delta,status,source
+event_audit_preservation,not_measured,preserved,protocol fact,code_and_tests,routes.py / conversation history

@@ -1,0 +1,11 @@
+{
+  "measurement_status": "deterministic_tests_and_C_trace",
+  "directed_scope_repair_limit": 1,
+  "no_progress_replan_limit": 2,
+  "invalid_tool_call_rate": "not_measured",
+  "track_id": "03_recovery_executor",
+  "run_label": "optimized",
+  "case_count": 30,
+  "cases_sha256": "2763ae64dca24a113445d2b07c6b8790e7175b39ef971075e49930f8b61e8832",
+  "gold_sha256": "94822e5819f2fb0b709209b66a75f752bd4acd1c9ec525be8aaf424719cd26c0"
+}

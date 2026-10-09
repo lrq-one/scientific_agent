@@ -1,0 +1,2 @@
+metric,baseline,optimized,delta,status,source
+scope_false_accept_rate,not_measured,0.0,not_comparable,safety_floor,focused C trace + tests

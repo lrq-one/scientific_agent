@@ -1,0 +1,6 @@
+{
+  "findings": [
+    "BM25 k=3 reduced input tokens but lowered retrieval recall in the existing 100-case run.",
+    "No-skill live ablation matched optimized strict success on 10 cases, so Skill benefit is unproven."
+  ]
+}

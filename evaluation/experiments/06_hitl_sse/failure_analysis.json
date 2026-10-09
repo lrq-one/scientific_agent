@@ -1,0 +1,6 @@
+{
+  "findings": [
+    "Persisted event IDs are replayed after a cursor; UI stage grouping does not delete audit events.",
+    "Reconnection and duplicate suppression need a dedicated browser fault-injection runner before claiming a rate."
+  ]
+}

@@ -1,0 +1,4 @@
+metric,baseline,optimized,delta,status,source
+strict_task_success,0.6,0.7,0.1,real_qwen_10_case_reference,committed live comparison
+provider_calls,55,58,3,real_qwen_10_case_reference,nested call ledger
+p95_latency_ms,21213.86,22928.77,1714.91,real_qwen_10_case_reference,committed live comparison

@@ -1,0 +1,9 @@
+{
+  "status": "planned",
+  "variants": [
+    "disconnect/replay",
+    "duplicate event delivery",
+    "cancel race",
+    "wrong identity resume"
+  ]
+}

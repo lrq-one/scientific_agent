@@ -1,0 +1,150 @@
+{"case_id": "skill-001", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-002", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-003", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-004", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-005", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-006", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-007", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-008", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-009", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-010", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-011", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-012", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-013", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-014", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-015", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-016", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-017", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-018", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-019", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-020", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-021", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-022", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-023", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-024", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-025", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-026", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-027", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-028", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-029", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-030", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-031", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-032", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-033", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-034", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-035", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-036", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-037", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-038", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-039", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-040", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-041", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-042", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-043", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-044", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-045", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-046", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-047", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-048", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-049", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-050", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-051", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-052", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-053", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-054", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-055", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-056", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-057", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-058", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-059", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-060", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-061", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-062", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-063", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-064", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-065", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-066", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-067", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-068", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-069", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-070", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-071", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-072", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-073", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-074", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-075", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-076", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-077", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-078", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-079", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-080", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-081", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-082", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-083", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-084", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-085", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-086", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-087", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-088", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-089", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-090", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-091", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-092", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-093", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-094", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-095", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-096", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-097", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-098", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-099", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-100", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-101", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-102", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-103", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-104", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-105", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-106", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-107", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-108", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-109", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-110", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-111", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-112", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-113", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-114", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-115", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-116", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-117", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-118", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-119", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-120", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-121", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-122", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-123", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-124", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-125", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-126", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-127", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-128", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-129", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-130", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-131", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-132", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-133", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-134", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-135", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-136", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-137", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-138", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-139", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-140", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-141", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}
+{"case_id": "skill-142", "gold_skills": ["rt_prediction_review"], "label_status": "human_checked"}
+{"case_id": "skill-143", "gold_skills": ["experiment_reproducibility_check"], "label_status": "human_checked"}
+{"case_id": "skill-144", "gold_skills": ["scientific_result_summary"], "label_status": "human_checked"}
+{"case_id": "skill-145", "gold_skills": ["model_comparison", "model_regression_diagnosis"], "label_status": "human_checked"}
+{"case_id": "skill-146", "gold_skills": ["mass_spec_error_analysis", "structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-147", "gold_skills": ["training_coverage_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-148", "gold_skills": ["dataset_quality_audit"], "label_status": "human_checked"}
+{"case_id": "skill-149", "gold_skills": ["structure_subgroup_analysis"], "label_status": "human_checked"}
+{"case_id": "skill-150", "gold_skills": ["model_regression_diagnosis", "model_comparison"], "label_status": "human_checked"}

@@ -1,0 +1,6 @@
+{
+  "findings": [
+    "Optimized strict success increased by one case in the committed 10-case run, while provider calls and P95 latency increased.",
+    "No-skill matched optimized strict success; attribution to Skill/Prompt/Context is not established."
+  ]
+}

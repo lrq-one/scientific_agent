@@ -1,0 +1,37 @@
+{
+  "schema_version": "scientific-agent-six-track-v1",
+  "track_id": "07_end_to_end",
+  "title": "End-to-end controlled delivery",
+  "baseline": {
+    "sha": "209fda8",
+    "mechanism": "engineering/intelligence baseline used by ten-case live comparison"
+  },
+  "optimized": {
+    "sha": "56fac82ab8f96d884820d3a23441bb9b6ac03624",
+    "code_path": "app/agents/runtime.py; app/api/routes.py; web/src/executionStages.js"
+  },
+  "cases": {
+    "count": 34,
+    "path": "cases.jsonl",
+    "sha256": "1c5fc72d6dd80280d1cce1542ffebec64143cf39450b03037bb2d46fcbfaa53c",
+    "source": "evaluation/benchmark/cases_extended.jsonl"
+  },
+  "gold": {
+    "path": "gold.jsonl",
+    "sha256": "76f9642fff1089bd298bf639e1f02ea329c589cd2efa660eb44c651fe676fda6",
+    "provenance": "source fixture review_status; independent label provenance retained in source file",
+    "split": "replay_plus_live_reference"
+  },
+  "environment": {
+    "provider": "real_qwen_reference_no_new_calls",
+    "database_writes": false,
+    "minio_writes": false,
+    "frozen_outputs_modified": false,
+    "model_calls_this_batch": 0
+  },
+  "measurement_policy": "Only the committed 10-case real-Qwen baseline/optimized/no-skill artifacts and existing isolated E2E runs are used. The 34-case package is a reproducibility scaffold, not a new success claim.",
+  "limitations": [
+    "Ten-case live comparison is insufficient to generalize six-track intelligence gains.",
+    "No new Qwen calls were made because the prior ledger has 189/250 provider calls and the remaining budget is reserved for a separately approved paired run."
+  ]
+}
