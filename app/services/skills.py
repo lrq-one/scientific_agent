@@ -124,6 +124,13 @@ class SkillService:
             required = {str(item) for item in skill.get("required_capabilities", [])}
             if available_capabilities is not None and not required.issubset(available):
                 continue
+            # The declared Skill input contract is an execution prerequisite,
+            # not just an optional hint to the LLM. In particular, comparing
+            # two model-run names is NOT comparing two dataset versions.
+            if skill.get("requires_two_dataset_versions"):
+                explicit_versions = set(re.findall(r"train[_-]?v\d+", goal, re.I))
+                if len(explicit_versions) != 2 or not re.search(r"比较|对比|compare", goal, re.I):
+                    continue
             candidates.append(skill)
         allowed = {item["name"] for item in candidates}
         if not candidates:
