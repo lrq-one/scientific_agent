@@ -5,10 +5,12 @@
  */
 export function retryQueryForFailedTask(status, tasks, messages) {
   if (status !== 'failed') return ''
-  const failedTask = [...(tasks || [])].reverse().find(item => item.status === 'failed')
-  if (!failedTask) return ''
+  // Retry applies ONLY to the latest task in this conversation. An earlier
+  // failed task must never be chosen after a newer question was submitted.
+  const latestTask = (tasks || []).at(-1)
+  if (!latestTask || latestTask.status !== 'failed') return ''
   const users = (messages || []).filter(item => item.role === 'user')
-  const original = users.findLast(item => item.task_id === failedTask.id)
+  const original = users.findLast(item => item.task_id === latestTask.id)
   if (!original) return ''
   const text = String(original.content || '').trim()
   if (text !== '重新回答') return text
