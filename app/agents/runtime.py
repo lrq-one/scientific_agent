@@ -21,7 +21,7 @@ from app.tools.registry import ToolChoice
 from app.services.evaluation_variant import VARIANT, EVIDENCE_GATE_ENABLED
 from app.services.resource_grounding import resolve_binding, resolve_scope, ask_sufficiency, bind_populations, effective_scope, independent_population_intent
 from app.agents.plan_protocol import (prepare_replacement, plan_action_signature, refresh_steps,
-                                      satisfied, retain_verified_prerequisites)
+                                      satisfied, condition_for, retain_verified_prerequisites)
 from app.agents.goal_coverage import assess_goal_coverage
 from app.services.query_scope import UnverifiedScope, validate_scope
 from app.services.database_errors import is_database_storage_corruption
@@ -239,7 +239,10 @@ class DecisionRuntime:
             # cannot create workflow steps or overwrite tool observations.
             return
         by_id = {step.step_id: step for step in state.plan}
-        proposed_completed = set(decision.completed_step_ids) | {step.step_id for step in state.plan if step.status == "completed"}
+        # Completion hints cannot satisfy dependencies without real evidence.
+        proposed_completed = {step.step_id for step in state.plan if step.status == "completed" and satisfied(step)}
+        proposed_completed.update(step_id for step_id in decision.completed_step_ids
+                                  if step_id in by_id and satisfied(by_id[step_id]))
         active_step = None
         if decision.action == "CALL_TOOL":
             active_step = by_id.get(decision.step_id)
@@ -260,10 +263,8 @@ class DecisionRuntime:
                 raise ValueError(f"cannot complete unstarted step {step_id!r} (status={step.status if step else 'unknown'}); execute its authorized tools first. HITL confirmation is not a tool observation")
             if any(dep not in proposed_completed for dep in step.depends_on):
                 raise ValueError("uncompleted plan dependencies")
-            if step.status != "completed" and not any(item.get("success") for item in step.observations):
-                raise ValueError("step has no successful observation")
-            if step.completion_condition and not satisfied(step):
-                raise ValueError(f"step {step_id!r} completion condition not met: {step.completion_condition.model_dump()}")
+            if not satisfied(step):
+                raise ValueError(f"step {step_id!r} completion condition not met: {condition_for(step).model_dump()}")
         for step_id in decision.completed_step_ids:
             step = by_id[step_id]
             if step.status != "completed":
