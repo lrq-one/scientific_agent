@@ -76,7 +76,7 @@ def _requested_dimensions(state) -> list[str]:
 
 def _explicit_csv_export_requested(question: str) -> bool:
     """Check the user's literal deliverable, not an LLM-authored Plan hint."""
-    if re.search(r"(?:不需要|无需|不用|不必|不要|禁止|勿)\\s*(?:导出|生成|保存|输出|下载)", question, re.I):
+    if re.search(r"(?:不需要|无需|不用|不必|不要|禁止|勿)\s*(?:导出|生成|保存|输出|下载)", question, re.I):
         return False
     return any(re.search(pattern, question, re.I) for pattern in (
         r"(?:导出|生成|保存|输出|下载|写入|export|download|save)[^。！？\n]{0,50}csv",
