@@ -21,7 +21,8 @@ from app.tools.registry import ToolChoice
 from app.services.evaluation_variant import VARIANT, EVIDENCE_GATE_ENABLED
 from app.services.resource_grounding import resolve_binding, resolve_scope, ask_sufficiency, bind_populations, effective_scope, independent_population_intent
 from app.agents.plan_protocol import (prepare_replacement, plan_action_signature, refresh_steps,
-                                      satisfied, condition_for, retain_verified_prerequisites)
+                                      satisfied, condition_for, retain_verified_prerequisites,
+                                      ensure_sql_schema_entrypoint)
 from app.agents.goal_coverage import assess_goal_coverage
 from app.services.query_scope import UnverifiedScope, validate_scope
 from app.services.database_errors import is_database_storage_corruption
@@ -169,6 +170,7 @@ class DecisionRuntime:
             raise ValueError("REPLAN must supply a complete free-form plan")
         specs = getattr(getattr(self.owner, "tool_registry", None), "specs", {})
         proposed = retain_verified_prerequisites(state, decision.plan)
+        proposed = ensure_sql_schema_entrypoint(state, proposed, set(state.allowed_tools))
         PlanningPolicy.validate_plan(proposed, set(state.allowed_tools), set(state.available_tools),
             {k: v.required_capability for k, v in specs.items()} if specs else None)
         plan_id, prepared = prepare_replacement(state, proposed)
