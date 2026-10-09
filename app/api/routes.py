@@ -489,12 +489,17 @@ async def conversation_chat_stream(
                 request.thread_id,
                 workflow_datasource,
                 conversation_context={"chat_messages": stateless_messages} if stateless_messages is not None else {
-                    "summary": conversation_context_summary(request.query, recent_contexts).model_dump(mode="json"),
                     "follow_up_decision": follow_up.model_dump(mode="json"),
-                    "previous_provenance": provenance.model_dump(mode="json"),
                     "previous_query_scope": ((previous_context or {}).get("task", {}).get("intent_json") or {}).get("query_scope", {}),
                     "state_sufficiency": sufficiency.model_dump(mode="json"),
                     "current_user_query": request.query,
+                    # A fresh/rerun execution must not mistake OLD failed
+                    # tool observations or previous answers for CURRENT facts.
+                    # Refinements/continuations can still see bounded history.
+                    **({} if follow_up.interaction_type in {"NEW_TASK", "RERUN"} else {
+                        "summary": conversation_context_summary(request.query, recent_contexts).model_dump(mode="json"),
+                        "previous_provenance": provenance.model_dump(mode="json"),
+                    }),
                 },
                 **(
                     {"dataset_version": workflow_dataset_version}
