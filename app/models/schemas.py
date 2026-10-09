@@ -78,6 +78,28 @@ class PopulationRequirement(PopulationRequest):
     population_id: str
 
 
+class GoalContract(BaseModel):
+    """The immutable user requirement contract for one Agent run.
+
+    Resources, Skills and Plans are execution context; none of them may add
+    requirements here.  Revisions are represented by a new version and are
+    only created for validated user/HITL changes.
+    """
+
+    contract_version: int = 1
+    original_request: str
+    required_goals: list[str] = Field(default_factory=list)
+    required_dimensions: list[str] = Field(default_factory=list)
+    required_data_sources: list[str] = Field(default_factory=list)
+    dataset_version: str | None = None
+    population_requirements: list[PopulationRequirement] = Field(default_factory=list)
+    required_deliverables: list[Literal["database_analysis", "file_analysis", "artifact"]] = Field(default_factory=list)
+    user_confirmed: bool = True
+    change_source: Literal["user_request", "validated_proposal", "hitl"] = "user_request"
+    change_reason: str = "initial user request"
+    frozen: bool = True
+
+
 class CompletionCondition(BaseModel):
     kind: Literal["SCHEMA", "TOOL_RESULTS", "EXECUTED_ROWS", "ARTIFACT"] = "TOOL_RESULTS"
     required_tools: list[str] = Field(default_factory=list)
@@ -234,6 +256,8 @@ class ScientificAgentState(BaseModel):
     quality_status: str | None = None
     quality_issues: list[str] = Field(default_factory=list)
     goal_coverage: GoalCoverage = Field(default_factory=GoalCoverage)
+    goal_contract: GoalContract | None = None
+    goal_contract_history: list[GoalContract] = Field(default_factory=list)
     requested_dimensions: list[str] = Field(default_factory=list)
     required_deliverables: list[str] = Field(default_factory=list)
     final_answer: str | None = None

@@ -25,6 +25,8 @@ from app.agents.plan_protocol import (prepare_replacement, plan_action_signature
                                       satisfied, condition_for, retain_verified_prerequisites,
                                       ensure_sql_schema_entrypoint)
 from app.agents.goal_coverage import assess_goal_coverage
+from app.agents.goal_contract import (accept_population_requirements, apply_decision_proposal,
+                                      ensure_goal_contract, revise_from_hitl)
 from app.services.query_scope import ScopeViolation, UnverifiedScope, validate_scope
 from app.services.database_errors import is_database_storage_corruption
 
@@ -106,8 +108,19 @@ class DecisionRuntime:
         grounding_query = (str(context.get("current_user_query") or state.goal) if reuse else state.goal)
         if state.hitl_answers:
             grounding_query += "\n" + state.hitl_answers[-1]["answer"]
+        # A latest HITL answer is the only source allowed to change a frozen
+        # version during grounding. Do not let the previous state version
+        # override an explicit answer such as ``confirm train_v2``.
+        explicit_version = state.dataset_version
+        if state.hitl_answers:
+            versions = list(dict.fromkeys(
+                item.lower().replace("-", "_")
+                for item in re.findall(r"\btrain[_-]?v\d+\b", str(state.hitl_answers[-1].get("answer", "")), re.I)
+            ))
+            if len(versions) == 1:
+                explicit_version = versions[0]
         state.resource_binding = resolve_binding(grounding_query, state.resource_summary, previous,
-            explicit_version=state.dataset_version, datasource=state.datasource_id)
+            explicit_version=explicit_version, datasource=state.datasource_id)
         state.dataset_version = state.resource_binding.dataset_version
         state.datasource_id = state.resource_binding.datasource_id
         state.query_scope = resolve_scope(state.goal + ("\n"+state.hitl_answers[-1]["answer"] if state.hitl_answers else ""), state.resource_binding, previous)
@@ -137,6 +150,7 @@ class DecisionRuntime:
             available_capabilities=set(state.available_tools), role="researcher", selected_skills=state.selected_skills,
         )
         state.allowed_tools = [item.name for item in candidates]
+        ensure_goal_contract(state)
 
     def build_context(self, values, config: RunnableConfig):
         self._check(config)
@@ -152,6 +166,7 @@ class DecisionRuntime:
             "datasource_id": state.datasource_id, "dataset_version": state.dataset_version,
             "resource_hint": state.resource_hint, "decision_source": "llm_control_plane",
             "resource_binding": state.resource_binding.model_dump(mode="json"), "query_scope": state.query_scope.model_dump(mode="json"),
+            "goal_contract": state.goal_contract.model_dump(mode="json") if state.goal_contract else None,
         }, selected_skills=selected, skill_source=source, llm_telemetry=telemetry)
         return self._return(state)
 
@@ -459,7 +474,10 @@ class DecisionRuntime:
             state.decision_telemetry = telemetry
             state.decision = decision
             if decision.population_requests:
-                state.populations = bind_populations(state, decision.population_requests)
+                populations = bind_populations(state, decision.population_requests)
+                accept_population_requirements(state, populations)
+                state.populations = populations
+            apply_decision_proposal(state, decision)
             # A decision goal is often the local action goal. The user's task
             # goal is immutable during this run; refinements enter via context.
             # A model may echo the plan in CALL_TOOL output. It is context, not
@@ -485,10 +503,6 @@ class DecisionRuntime:
             state.runtime_status = "waiting_for_user" if decision.action == "ASK_USER" else "running"
             # These describe the immutable original need using the existing
             # Decision call. Later local goals cannot erase a required output.
-            if not state.requested_dimensions and decision.requested_dimensions:
-                state.requested_dimensions = list(decision.requested_dimensions)
-            if not state.required_deliverables and decision.required_deliverables:
-                state.required_deliverables = list(decision.required_deliverables)
             self._emit(config, "AGENT_DECISION", decision.reason_summary or "已生成下一步结构化决策",
                        decision=decision.model_dump(mode="json"), iteration=state.iteration_count,
                        observed_tool_call_ids=[call["tool_call_id"] for call in state.tool_calls],
@@ -803,6 +817,7 @@ class DecisionRuntime:
         state.runtime_status = "running"
         state.grounding_ready = False
         self._ground_resources(state)
+        revise_from_hitl(state, str(answer))
         selected, source, telemetry = self._select_skills(state, config)
         if telemetry.get("fallback"):
             raise RuntimeError("Real Skill routing unavailable during resume")
@@ -812,6 +827,7 @@ class DecisionRuntime:
             "goal": state.goal, "task_type": state.task_type, "datasource_id": state.datasource_id,
             "dataset_version": state.dataset_version, "decision_source": "llm_control_plane",
             "resource_binding": state.resource_binding.model_dump(mode="json"), "query_scope": state.query_scope.model_dump(mode="json"),
+            "goal_contract": state.goal_contract.model_dump(mode="json") if state.goal_contract else None,
         }, selected_skills=selected, skill_source=source, llm_telemetry=telemetry)
         self._emit(config, "HITL_RESUMED", "已恢复同一 Agent State", thread_id=state.thread_id,
                    task_id=state.task_id, conversation_id=state.conversation_id)

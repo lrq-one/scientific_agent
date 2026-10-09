@@ -50,6 +50,8 @@ def _row_columns(value: Any) -> set[str]:
 
 
 def _requested_dimensions(state) -> list[str]:
+    if state.goal_contract is not None:
+        return list(state.goal_contract.required_dimensions)
     dimensions = list(state.query_scope.grouping)
     question = state.user_request or state.goal
     columns = {column["name"] for table in state.schema_cache.values()
@@ -110,10 +112,13 @@ def assess_goal_coverage(state, *, non_empirical: bool = False) -> GoalCoverage:
         missing_dimensions.append(dimension)
 
     missing_populations = missing_population_coverage(state, executed_sql) if state.populations or state.requires_population_binding or executed_sql else []
-    requested_artifact = any((step.selected_tools or step.preferred_tools) and
-                             set(step.selected_tools or step.preferred_tools) & ARTIFACT_TOOLS
-                             for step in state.plan)
-    requested_artifact = requested_artifact or "artifact" in state.required_deliverables
+    contract_deliverables = (list(state.goal_contract.required_deliverables)
+                             if state.goal_contract is not None else list(state.required_deliverables))
+    requested_artifact = "artifact" in contract_deliverables if state.goal_contract is not None else any(
+        (step.selected_tools or step.preferred_tools) and
+        set(step.selected_tools or step.preferred_tools) & ARTIFACT_TOOLS
+        for step in state.plan
+    ) or "artifact" in contract_deliverables
     missing_deliverables = ["artifact"] if requested_artifact and not state.artifacts else []
     # A CSV explicitly requested in the original user goal cannot disappear
     # because a model omitted it from Plan/required_deliverables. A chart or
@@ -128,9 +133,17 @@ def assess_goal_coverage(state, *, non_empirical: bool = False) -> GoalCoverage:
         )
         if not persisted_csv:
             missing_deliverables.append("csv_export")
-    required_capabilities = {cap.value for step in state.plan for cap in step.required_capabilities}
-    required_capabilities.update(item.removesuffix("_analysis") for item in state.required_deliverables
-                                 if item.endswith("_analysis"))
+    if state.goal_contract is not None:
+        # The user contract is authoritative; a plan cannot create a new
+        # database/file obligation after resources or tools are discovered.
+        required_capabilities = {
+            item.removesuffix("_analysis") for item in contract_deliverables
+            if item.endswith("_analysis")
+        }
+    else:
+        required_capabilities = {cap.value for step in state.plan for cap in step.required_capabilities}
+        required_capabilities.update(item.removesuffix("_analysis") for item in state.required_deliverables
+                                     if item.endswith("_analysis"))
     # ResourceBinding describes authorised resources that were discovered, not
     # work the user requested.  A file-only question may legitimately bind the
     # named files while metadata discovery also records an available datasource.
