@@ -66,7 +66,7 @@ const labels = {
   AGENT_DECISION: 'Agent 下一步决策', PLAN_UPDATED: '已重规划',
   OBSERVATION_RECORDED: '观察已写回状态', HITL_RESUMED: '已恢复原任务',
   RECOVERY_DECISION: '已判断恢复策略', INTERACTION_RESOLVED: '已理解本轮交互', SECURITY_DECISION: '已检查执行权限',
-  CANCELLED: '已取消任务', FINAL_ANSWER: '已生成最终回答（是否完成目标以任务状态为准）', ERROR: '执行出错',
+  CANCELLED: '已取消任务', FINAL_ANSWER: '已生成回答', ERROR: '执行出错',
 }
 
 function emptyTrace() {
