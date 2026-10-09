@@ -25,6 +25,8 @@ class SQLScopeValidationError(ValueError):
         from app.services.query_scope import ScopeViolation
         failure_code = "SCOPE_VIOLATION" if isinstance(error, ScopeViolation) else "UNVERIFIED_SCOPE"
         self.failure_code = failure_code
+        recovery_action = "safe_reject" if failure_code == "SCOPE_VIOLATION" else "targeted_sql_repair"
+        retry_budget = 0 if failure_code == "SCOPE_VIOLATION" else 1
         self.metadata = {**metadata, "sql_candidate": candidate.model_dump(mode="json"),
                          "sql_candidate_status": "diagnostic_only",
                          "scope_validation": {"verified": False, "status": failure_code,
@@ -32,8 +34,8 @@ class SQLScopeValidationError(ValueError):
                          "recovery": {"failed_stage": "sql_scope_validation",
                                       "candidate_role": "diagnostic_only",
                                       "failure_code": failure_code,
-                                      "recovery_action": "targeted_sql_repair",
-                                      "retry_budget": 1,
+                                      "recovery_action": recovery_action,
+                                      "retry_budget": retry_budget,
                                       "instruction": "The supplied QueryScope is unchanged. Repair the SQL predicate/lineage, or retrieve missing authorized schema; renaming a Plan or dropping scope does not repair SQL."}}
 
 
