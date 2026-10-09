@@ -169,8 +169,26 @@ def _sql_candidate(scope):
 
 @pytest.mark.asyncio
 async def test_real_langgraph_A_file_goal_and_D06_minio_artifact(tmp_path):
+    agent_a, _ = _make_agent(
+        tmp_path / "a",
+        _resources(files=("model_v1.csv", "model_v2.csv")),
+        [
+            AgentDecision(action="REPLAN", plan=[_file_plan()], reason_summary="file-only plan"),
+            AgentDecision(action="FINISH", reason_summary="file-only complete"),
+        ],
+    )
+    try:
+        _copy_demo_files(agent_a, "integration", "A-only")
+        events_a = [item async for item in agent_a.stream("compare model_v1.csv and model_v2.csv MAE", "integration", "A-only")]
+        assert events_a[-1].event == "FINAL_ANSWER"
+        state_a = events_a[-1].data["state"]
+        assert [call["tool"] for call in state_a["tool_calls"]] == ["compare_models"]
+        assert state_a["goal_coverage"]["status"] == "SATISFIED"
+    finally:
+        agent_a.checkpointing.close()
+
     agent, storage = _make_agent(
-        tmp_path,
+        tmp_path / "d06",
         _resources(files=("model_v1.csv", "model_v2.csv"), artifact=True),
         [
             AgentDecision(action="REPLAN", plan=[_file_plan(artifact=True)], reason_summary="file plan"),
