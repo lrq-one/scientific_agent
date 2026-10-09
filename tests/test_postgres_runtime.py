@@ -28,7 +28,10 @@ pytestmark = pytest.mark.skipif(not postgres_available(), reason="PostgreSQL int
 def test_postgres_schema_select_and_relationships():
     database = DatabaseService("training_db", ["training_db"], database_url=POSTGRES_URL)
     assert database.schema().metadata["backend"] == "postgres"
-    assert database.relationships().data[0]["target_table"] == "molecules"
+    assert any(
+        relation["source_table"] == "training_molecules" and relation["target_table"] == "molecules"
+        for relation in database.relationships().data
+    )
     assert database.execute("SELECT COUNT(*) AS count FROM training_molecules").data[0]["count"] >= 7
 
 

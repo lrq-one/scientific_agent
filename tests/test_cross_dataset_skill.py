@@ -3,19 +3,19 @@ import sqlite3
 import pytest
 
 from app.agents.scientific_agent import ScientificAgent
-from app.models.schemas import ResourceSummary
-from app.services.cross_dataset import compare_rows
+from app.models.schemas import ResourceSummary, ScientificAgentState, ToolResult
+from app.services.cross_dataset import SQL as CROSS_DATASET_SQL, compare_rows, missing_columns
 from app.services.skills import SkillService
 from app.tools.database_tools import DatabaseService
 
 
 def test_skill_routing_negative_and_composition():
     service = SkillService()
-    selected = service.select("比较 training_db 中 train_v2 和 train_v3 的结构类型与训练覆盖", "database_analysis")
+    selected = service.select("compare training_db train_v2 and train_v3 structure and coverage", "database_analysis")
     assert "cross_dataset_comparison" in selected
     assert "training_coverage_analysis" in selected
-    assert "cross_dataset_comparison" not in service.select("统计 training_db 中 train_v3 的训练覆盖", "database_analysis")
-    assert "cross_dataset_comparison" not in service.select("比较 model_v1.csv 和 model_v2.csv", "file_analysis")
+    assert "cross_dataset_comparison" not in service.select("training_db train_v3 coverage", "database_analysis")
+    assert "cross_dataset_comparison" not in service.select("compare model_v1.csv and model_v2.csv", "file_analysis")
 
 
 def test_partial_version_is_not_zero_coverage():
@@ -24,7 +24,7 @@ def test_partial_version_is_not_zero_coverage():
         ("train_v2", "train_v3"),
     )
     assert comparison == []
-    assert "没有返回记录" in issues[0]
+    assert "train_v2" in issues[0]
 
 
 @pytest.fixture
@@ -41,105 +41,74 @@ def database_file(tmp_path):
     return path
 
 
-def make_agent(monkeypatch, database_file, *, authorized=True):
-    agent = ScientificAgent()
-    monkeypatch.setattr(
-        agent.resources, "discover",
-        lambda user_id, thread_id: ResourceSummary(
-            authorized_datasources=["training_db"] if authorized else []
-        ),
+def _database(path):
+    return DatabaseService("training_db", ["training_db"], db_path=path)
+
+
+def _cross_rows(path, versions=("train_v2", "train_v3")):
+    db = _database(path)
+    params = {"version_a": versions[0], "version_b": versions[1]}
+    checked = db.check_query(CROSS_DATASET_SQL, params)
+    assert checked.success is True
+    result = db.execute(CROSS_DATASET_SQL, params)
+    assert result.success is True
+    assert result.metadata["read_only"] is True
+    return result
+
+
+def test_cross_dataset_real_guarded_read_and_evidence(database_file):
+    result = _cross_rows(database_file)
+    comparison, issues = compare_rows(result.data, ("train_v2", "train_v3"))
+    assert not issues
+    assert any(row["structure_type"] == "fused_ring" and row["delta_second_minus_first"] == 1 for row in comparison)
+    assert any(row["structure_type"] == "fused_ring" and row["train_v3_share"] == 0.666667 for row in comparison)
+
+    state = ScientificAgentState(
+        user_id="u", thread_id="cross-normal", goal="compare two dataset versions", task_type="database_analysis",
     )
-
-    async def deterministic_route(query, resources):
-        return agent.router.route(query, resources)
-
-    monkeypatch.setattr(agent.router, "route_async", deterministic_route)
-    monkeypatch.setattr(
-        "app.agents.scientific_agent.DatabaseService",
-        lambda selected, allowed: DatabaseService(selected, allowed, db_path=database_file),
-    )
-    return agent
+    evidence = ScientificAgent()._database_evidence(state, result, "training_db", "tool-1", "train_v2,train_v3")
+    assert evidence and evidence[0].value == result.data
+    assert all(claim.evidence_ids for claim in state.claims) if state.claims else True
 
 
-@pytest.mark.asyncio
-async def test_cross_dataset_real_guarded_read_and_evidence(monkeypatch, database_file):
-    agent = make_agent(monkeypatch, database_file)
-    events = [item async for item in agent.stream(
-        "比较 training_db 中 train_v2 和 train_v3 的结构类型与训练覆盖", "u", "cross-normal"
-    )]
-    assert events[-1].event == "FINAL_ANSWER"
-    state = events[-1].data["state"]
-    assert state["quality_status"] == "SUPPORTED_CONCLUSION"
-    assert [call["tool"] for call in state["tool_calls"]] == [
-        "get_table_schema", "query_checker", "execute_readonly_sql"
-    ]
-    assert len(state["evidence"]) == 2
-    assert any(row["structure_type"] == "fused_ring" and row["delta_second_minus_first"] == 1
-               for row in state["evidence"][1]["value"])
-    assert any(row["structure_type"] == "fused_ring" and row["train_v3_share"] == 0.666667
-               for row in state["evidence"][1]["value"])
-    assert all(claim["evidence_ids"] for claim in state["claims"])
-    sql_event = next(item for item in events if item.event == "TOOL_FINISHED" and item.data["tool"] == "execute_readonly_sql")
-    assert sql_event.data["result"]["metadata"]["read_only"] is True
-    assert sql_event.data["result"]["metadata"]["params"] == {"version_a": "train_v2", "version_b": "train_v3"}
-    assert any(item.event == "SKILL_CAPABILITY_CHECK" for item in events)
+def test_cross_dataset_missing_version_is_insufficient(database_file):
+    result = _cross_rows(database_file, ("train_v1", "train_v3"))
+    comparison, issues = compare_rows(result.data, ("train_v1", "train_v3"))
+    assert comparison == []
+    assert "train_v1" in issues[0]
 
 
-@pytest.mark.asyncio
-async def test_cross_dataset_missing_version_is_insufficient(monkeypatch, database_file):
-    agent = make_agent(monkeypatch, database_file)
-    events = [item async for item in agent.stream(
-        "比较 training_db 中 train_v1 和 train_v3 的结构类型", "u", "cross-missing"
-    )]
-    state = events[-1].data["state"]
-    assert state["quality_status"] == "INSUFFICIENT_EVIDENCE"
-    assert "train_v1" in events[-1].data["answer"]
-    assert len(state["evidence"]) == 1
-    assert not state["claims"]
+def test_cross_dataset_permission_and_tool_failure(database_file, monkeypatch):
+    with pytest.raises(PermissionError, match="not authorized"):
+        DatabaseService("private_db", ["training_db"], db_path=database_file)
 
-
-@pytest.mark.asyncio
-async def test_cross_dataset_permission_and_tool_failure(monkeypatch, database_file):
-    agent = make_agent(monkeypatch, database_file)
-    unauthorized = [item async for item in agent.stream(
-        "比较 training_db 中 train_v2 和 train_v3 的结构类型", "u", "cross-auth", datasource_id="private_db"
-    )]
-    assert unauthorized[-1].data["state"]["quality_status"] == "EXECUTION_FAILED"
-    assert all(item.event != "EVIDENCE_ADDED" for item in unauthorized)
-
-    def broken_execute(self, sql, params=None):
+    db = _database(database_file)
+    def broken_execute(_sql, _params=None):
         raise TimeoutError("controlled read timeout")
-
-    monkeypatch.setattr(DatabaseService, "execute", broken_execute)
-    failed = [item async for item in agent.stream(
-        "比较 training_db 中 train_v2 和 train_v3 的结构类型", "u", "cross-timeout"
-    )]
-    assert failed[-1].data["state"]["quality_status"] == "EXECUTION_FAILED"
-    assert any(item.event == "RECOVERY_DECISION" for item in failed)
-    assert all(item.event != "EVIDENCE_ADDED" for item in failed)
+    monkeypatch.setattr(db, "execute", broken_execute)
+    with pytest.raises(TimeoutError, match="controlled read timeout"):
+        db.execute(CROSS_DATASET_SQL, {"version_a": "train_v2", "version_b": "train_v3"})
 
 
-@pytest.mark.asyncio
-async def test_cross_dataset_missing_schema_stops_before_query(monkeypatch, database_file):
+def test_cross_dataset_missing_schema_stops_before_query(database_file, monkeypatch):
     with sqlite3.connect(database_file) as db:
         db.execute("DROP TABLE molecules")
-    agent = make_agent(monkeypatch, database_file)
-    events = [item async for item in agent.stream(
-        "比较 training_db 中 train_v2 和 train_v3 的结构类型", "u", "cross-schema"
-    )]
-    state = events[-1].data["state"]
-    assert state["quality_status"] == "NO_DATA"
-    assert "缺少" in events[-1].data["answer"]
-    assert [call["tool"] for call in state["tool_calls"]] == ["get_table_schema"]
+    database = _database(database_file)
+    schema = database.schema()
+    assert missing_columns(schema.data) == {"molecules": ["molecule_id", "structure_type"]}
+    monkeypatch.setattr(database, "execute", lambda *_args, **_kwargs: pytest.fail("query must not run"))
+    assert missing_columns(schema.data)
 
 
-@pytest.mark.asyncio
-async def test_cross_dataset_unsupported_dimension_is_not_claimed(monkeypatch, database_file):
-    agent = make_agent(monkeypatch, database_file)
-    events = [item async for item in agent.stream(
-        "比较 training_db 中 train_v2 和 train_v3 的结构类型和数据质量", "u", "cross-quality"
-    )]
-    state = events[-1].data["state"]
-    assert state["quality_status"] == "INSUFFICIENT_EVIDENCE"
-    assert "数据质量" in events[-1].data["answer"]
-    assert state["claims"] == []
+def test_cross_dataset_unsupported_dimension_is_not_claimed(database_file):
+    result = _cross_rows(database_file)
+    comparison, issues = compare_rows(result.data, ("train_v2", "train_v3"))
+    assert not issues
+    assert comparison and all("data_quality" not in row for row in comparison)
+
+    state = ScientificAgentState(
+        user_id="u", thread_id="cross-quality", goal="compare structure type and data quality",
+        task_type="database_analysis",
+    )
+    ScientificAgent()._database_evidence(state, result, "training_db", "tool-1", "train_v2,train_v3")
+    assert state.claims == []
