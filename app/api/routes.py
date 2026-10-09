@@ -37,6 +37,7 @@ from app.services.runtime_health import runtime_readiness
 from app.services.workspace import WorkspaceError, WorkspaceService
 from app.services.object_storage import ObjectStorageService
 from app.services.grounded_response import GroundedResponseService, GroundedResponseValidationError
+from app.services.task_completion import scientific_task_status
 from app.services.evaluation_variant import VARIANT
 
 
@@ -536,7 +537,7 @@ async def conversation_chat_stream(
                 elif item.event == "WAITING_FOR_USER":
                     repository.update_task(task_id, status="waiting_for_user")
                 elif item.event == "FINAL_ANSWER":
-                    status = "failed" if (item.data.get("state") or {}).get("quality_status") == "EXECUTION_FAILED" else "completed"
+                    status = scientific_task_status(item.data)
                     if not repository.finish_task_with_answer(task_id, conversation_id, item.data["answer"], payload, status=status):
                         yield encode_sse(SSEEvent(event="CANCELLED", message="用户已取消任务", data={"task_id": task_id}))
                         return
@@ -719,7 +720,7 @@ async def resume_agent(request: ResumeRequest, user_id: str = Depends(current_us
                     elif item.event == "WAITING_FOR_USER":
                         repository.update_task(request.task_id, status="waiting_for_user")
                     elif item.event == "FINAL_ANSWER":
-                        status = "failed" if (item.data.get("state") or {}).get("quality_status") == "EXECUTION_FAILED" else "completed"
+                        status = scientific_task_status(item.data)
                         if not repository.finish_task_with_answer(
                             request.task_id, request.conversation_id, item.data["answer"], payload, status=status
                         ):
