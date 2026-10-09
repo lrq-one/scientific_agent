@@ -299,10 +299,13 @@ def test_recorded_state_replay_no_execution_or_history_rewrite(case):
             if "text_to_sql" in (step.selected_tools or step.preferred_tools)
         ]
         assert schema_steps and sql_steps
-        assert any(
-            schema_step.step_id in sql_step.depends_on
-            for schema_step in schema_steps for sql_step in sql_steps
-        )
+        # The planner may put schema lookup and SQL in one step, separate
+        # independent steps, or depend on the injected prerequisite. All
+        # are valid ONLY if a schema tool can run before text_to_sql.
+        from app.agents.decision_node import eligible_call_tools
+        initial_callable = set(eligible_call_tools(state))
+        assert initial_callable & {"get_table_schema", "search_schema"}
+        assert "text_to_sql" not in initial_callable
         assert all(set(step.selected_tools or step.preferred_tools) <= set(state.allowed_tools)
                    for step in state.plan)
         assert state.control_observations[-1]["success"] is True
