@@ -6,6 +6,7 @@ import {
   getResources, listConversations, reconnectTask, renameConversation, resumeTask, streamConversation, uploadFile,
 } from './api'
 import { createConversationLoader } from './conversationLoader'
+import { retryQueryForFailedTask } from './retryQuery'
 import { activeStatuses, hydrateConversationTasks, recordTaskEvent, taskStatusForConversation } from './executionState'
 
 const conversationId = ref('')
@@ -21,14 +22,7 @@ const activeTaskId = computed(() => conversationActiveTask[conversationId.value]
 const currentStatus = computed(() => taskStatusForConversation(taskExecutions, conversationActiveTask, conversationId.value))
 const busy = computed(() => currentStatus.value === 'running' || currentStatus.value === 'cancelling')
 const cancelRequested = computed(() => currentStatus.value === 'cancelling')
-const retryableFailedQuery = computed(() => {
-  if (currentStatus.value !== 'failed') return ''
-  const failedTask = [...tasks.value].reverse().find(item => item.status === 'failed')
-  if (!failedTask) return ''
-  return [...messages.value].reverse().find(
-    item => item.role === 'user' && item.task_id === failedTask.id,
-  )?.content || ''
-})
+const retryableFailedQuery = computed(() => retryQueryForFailedTask(currentStatus.value, tasks.value, messages.value))
 const query = ref('')
 const conversationDialog = ref(null)
 const dialogInput = ref(null)
@@ -308,13 +302,13 @@ function receive(sourceConversationId, type, data) {
 async function primaryAction() {
   if (busy.value) return cancelRunning()
   if (!query.value.trim() && currentStatus.value === 'failed' && retryableFailedQuery.value) {
-    query.value = '重新回答'
+    query.value = retryableFailedQuery.value
   }
   return send()
 }
 
 async function send() {
-  const text = query.value.trim() || (currentStatus.value === 'failed' ? '重新回答' : '')
+  const text = query.value.trim()
   if (!text || busy.value || !conversationId.value) return
   const sourceConversationId = conversationId.value
   const activeThread = threadId.value
@@ -323,13 +317,15 @@ async function send() {
   let terminalSeen = false
   taskExecutions[provisionalId] = { conversation_id: sourceConversationId, task_id: provisionalId, thread_id: activeThread, status: 'running' }
   conversationActiveTask[sourceConversationId] = provisionalId
-  messages.value.push({ role: 'user', content: text })
+  const provisionalUserMessage = { role: 'user', content: text, task_id: provisionalId }
+  messages.value.push(provisionalUserMessage)
   query.value = ''; events.value = []; trace.value = emptyTrace(); pendingQuestion.value = ''
   try {
     await streamConversation(sourceConversationId, {
       query: text, thread_id: activeThread, datasource_id: datasourceId.value || null,
     }, (type, data) => {
       if (data.task_id && conversationActiveTask[sourceConversationId] === provisionalId) {
+        if (provisionalUserMessage.task_id === provisionalId) provisionalUserMessage.task_id = data.task_id
         delete taskExecutions[provisionalId]
       }
       if (data.task_id) subscribedTasks.add(data.task_id)
