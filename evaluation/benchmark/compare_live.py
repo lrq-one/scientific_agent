@@ -61,7 +61,10 @@ def main() -> None:
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     (output / "live_comparison.json").write_text(json.dumps(comparison, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    (output / "cost_ledger.json").write_text(json.dumps({name: data["ledger"].get("usage", {}) for name, data in runs.items()}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (output / "cost_ledger.json").write_text(json.dumps({name: {
+        **data["ledger"].get("usage", {}),
+        "provider_calls": provider_usage(data["cases"])["provider_calls"],
+    } for name, data in runs.items()}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     failures = {name: [{"case_id": case["case_id"], "stage": stage.get("stage"), "error_type": stage.get("error_type"), "error": stage.get("error")}
                        for case in data["cases"] for stage in case.get("stages", []) if not stage.get("success")] for name, data in runs.items()}
     (output / "failure_analysis.json").write_text(json.dumps(failures, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

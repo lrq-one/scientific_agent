@@ -6,7 +6,8 @@
     "total_tokens": 148628,
     "reserved_tokens": 0,
     "usage_measured": false,
-    "estimated_cost_usd": 0.02626231
+    "estimated_cost_usd": 0.02626231,
+    "provider_calls": 55
   },
   "optimized": {
     "requests": 46,
@@ -15,7 +16,8 @@
     "total_tokens": 151772,
     "reserved_tokens": 0,
     "usage_measured": false,
-    "estimated_cost_usd": 0.02767474
+    "estimated_cost_usd": 0.02767474,
+    "provider_calls": 58
   },
   "ablation_no_skill": {
     "requests": 36,
@@ -24,6 +26,7 @@
     "total_tokens": 134493,
     "reserved_tokens": 0,
     "usage_measured": false,
-    "estimated_cost_usd": 0.02345431
+    "estimated_cost_usd": 0.02345431,
+    "provider_calls": 58
   }
 }
