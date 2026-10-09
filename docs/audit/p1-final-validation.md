@@ -4,10 +4,10 @@
 
 | 阶段 | 提交 | 范围 |
 | --- | --- | --- |
-| P1.1 | `66909da` | GoalContract、目标边界和合同覆盖率 |
-| P1.2 | `3029d6f` | PlanStep allowed/completion/input/optional 协议 |
+| P1.1 | `66909da`, `9b30078` | GoalContract、目标边界和合同覆盖率（含命名数据源修正） |
+| P1.2 | `3029d6f`, `c34a6af` | PlanStep allowed/completion/input/optional 协议（含 ALL/ANY 谓词） |
 | P1.3 | `f68cfa9` | RecoveryPolicy 统一错误动作和预算 |
-| P1.4 | `2b917c8` | 受限确定性执行与审计 decision source |
+| P1.4 | `2b917c8`, `30b61e4` | 受限确定性执行与审计 decision source |
 | P1.5 | 本提交 | 离线验收矩阵、回放和交付记录 |
 
 ## 离线矩阵
