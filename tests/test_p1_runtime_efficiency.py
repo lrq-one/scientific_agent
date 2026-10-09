@@ -23,7 +23,9 @@ def _database_state():
         thread_id="deterministic",
         goal="count structure_type for train_v3",
         user_request="count structure_type for train_v3",
-        allowed_tools=["search_schema", "text_to_sql", "query_checker", "execute_readonly_sql"],
+        task_type="database_analysis",
+        allowed_tools=["list_datasources", "search_schema", "get_table_schema", "get_table_relationships",
+                       "text_to_sql", "query_checker", "execute_readonly_sql", "save_result_table"],
         available_tools=["database"],
         grounding_ready=True,
     )

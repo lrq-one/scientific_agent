@@ -527,14 +527,24 @@ class DecisionRuntime:
         # handled separately below because a new candidate/check is required.
         names = [name for name in names if name not in successful_names]
         candidate = self._trusted_candidate_payload(state, step.population_id if step else None)
+        # Once authorized schema is actually present, SQL generation is the
+        # only safe next stage for a database analysis with no candidate. Do
+        # not let unrelated optional schema/MCP/artifact tools make this look
+        # ambiguous; a plan step still remains the hard boundary.
+        if (candidate is None and "text_to_sql" in names and state.schema_cache
+                and (state.task_type == "database_analysis" or
+                     (step is not None and "text_to_sql" in allowed_tools_for(step)))):
+            names = ["text_to_sql"]
         if "execute_readonly_sql" in names and candidate is not None:
             checked = any(
                 call.get("tool") == "query_checker" and result.success
                 and (result.metadata.get("sql_candidate") or {}).get("sql") == candidate["sql"]
                 for call, result in zip(state.tool_calls, state.observations)
             )
-            if "query_checker" in names and not checked:
-                names.remove("execute_readonly_sql")
+            if not checked and "query_checker" in names:
+                names = ["query_checker"]
+            elif checked and "execute_readonly_sql" in names:
+                names = ["execute_readonly_sql"]
         # Without a trusted candidate execute is never a deterministic choice.
         if "execute_readonly_sql" in names and candidate is None:
             names.remove("execute_readonly_sql")
