@@ -7,7 +7,7 @@
     "mechanism": "pre-lineage QueryScope/SQLCandidate recovery"
   },
   "optimized": {
-    "sha": "56fac82ab8f96d884820d3a23441bb9b6ac03624",
+    "sha": "4927f4b2b24823325e06acee7ee6b39009610066",
     "code_path": "app/services/text2sql.py; app/services/query_scope.py; app/services/query_decomposition.py"
   },
   "cases": {

@@ -95,7 +95,7 @@ def main() -> None:
             "id": "01_skill_prompt_context", "title": "Skill Routing + Prompt + Context",
             "cases_source": "evaluation/skill_routing/cases.jsonl", "case_limit": 150,
             "gold_fields": ("gold_skills",), "split": "dev+test_source_fixture",
-            "baseline": {"sha": "unrecorded historical phase4 run", "mechanism": "all-catalog routing and inline prompts"},
+            "baseline": {"sha": "ff890d0", "mechanism": "all-catalog routing and inline prompts", "historical_metric_sha": "not_recorded_in_phase4_run_manifest"},
             "code_path": "app/services/skills.py; app/services/prompt_catalog.py; app/services/context_projection.py",
             "provider": "historical_qwen_reference_and_offline_current_code",
             "measurement_policy": "Historical Skill runs are referenced, not rerun. Current prompt/catalog/context changes are validated offline; no current paired Qwen delta is claimed.",

@@ -1,7 +1,7 @@
 # Skill Routing + Prompt + Context
 
 Cases: 150; split: dev+test_source_fixture.
-Baseline: unrecorded historical phase4 run (all-catalog routing and inline prompts).
+Baseline: ff890d0 (all-catalog routing and inline prompts).
 Optimized code: app/services/skills.py; app/services/prompt_catalog.py; app/services/context_projection.py.
 
 ## Measurement boundary
