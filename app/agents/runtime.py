@@ -23,7 +23,7 @@ from app.services.evaluation_variant import VARIANT, EVIDENCE_GATE_ENABLED
 from app.services.resource_grounding import resolve_binding, resolve_scope, ask_sufficiency, bind_populations, effective_scope, independent_population_intent
 from app.agents.plan_protocol import (prepare_replacement, plan_action_signature, refresh_steps,
                                       satisfied, condition_for, retain_verified_prerequisites,
-                                      ensure_sql_schema_entrypoint)
+                                      ensure_sql_schema_entrypoint, allowed_tools_for)
 from app.agents.goal_coverage import assess_goal_coverage
 from app.agents.goal_contract import (accept_population_requirements, apply_decision_proposal,
                                       ensure_goal_contract, revise_from_hitl)
@@ -191,12 +191,12 @@ class DecisionRuntime:
         PlanningPolicy.validate_plan(proposed, set(state.allowed_tools), set(state.available_tools),
             {k: v.required_capability for k, v in specs.items()} if specs else None)
         plan_id, prepared = prepare_replacement(state, proposed)
-        if not state.schema_cache and any("text_to_sql" in (step.selected_tools or step.preferred_tools) for step in prepared):
+        if not state.schema_cache and any("text_to_sql" in allowed_tools_for(step) for step in prepared):
             # Match the existing executor prerequisite, not the prose of a
             # purported 'schema' step. A plan cannot discover schema through
             # a generator that already needs it, nor omit all producers.
             schema_tools = {"search_schema", "get_table_schema"}
-            if not any(schema_tools & set(step.selected_tools or step.preferred_tools) for step in prepared):
+            if not any(schema_tools & set(allowed_tools_for(step)) for step in prepared):
                 raise ValueError("Plan requires text_to_sql but has no inspected schema or schema-producing tool. Retrieve authorized schema using an allowed capability; prose/renaming is not schema retrieval")
             from app.agents.decision_node import eligible_call_tools
             prospective = state.model_copy(update={"plan": prepared})
@@ -276,8 +276,12 @@ class DecisionRuntime:
             unmet = [dep for dep in active_step.depends_on if dep not in proposed_completed]
             if unmet:
                 raise ValueError(f"plan dependency not completed: step={active_step.step_id!r}, unmet={unmet}; execute prerequisites first, do not invent completion")
-            if decision.tool_name not in (active_step.selected_tools or active_step.preferred_tools):
-                raise ValueError(f"tool {decision.tool_name!r} is outside step {active_step.step_id!r}; allowed={active_step.selected_tools or active_step.preferred_tools}. Use explicit REPLAN to change step tools, not CALL_TOOL with an edited plan.")
+            if decision.tool_name not in allowed_tools_for(active_step):
+                raise ValueError(f"tool {decision.tool_name!r} is outside step {active_step.step_id!r}; allowed={allowed_tools_for(active_step)}. Use explicit REPLAN to change step tools, not CALL_TOOL with an edited plan.")
+            provided_inputs = set(decision.tool_arguments) | set(decision.input_refs)
+            missing_inputs = [name for name in active_step.required_inputs if name not in provided_inputs]
+            if missing_inputs:
+                raise ValueError(f"CALL_TOOL is missing required PlanStep inputs: {missing_inputs}")
         # Validate the WHOLE proposal before committing any progress/events.
         # A rejected CALL_TOOL must not poison its step as already completed.
         for step_id in decision.completed_step_ids:
@@ -626,7 +630,7 @@ class DecisionRuntime:
             active = None
             if state.plan:
                 step = state.plan[state.current_step]
-                active = set(step.selected_tools or step.preferred_tools)
+                active = set(allowed_tools_for(step))
             binding = state.resource_binding.model_copy(deep=True)
             if population_id:
                 for field in ("dataset_id", "dataset_version", "dataset_version_id", "datasource_id"):

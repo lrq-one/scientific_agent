@@ -179,22 +179,57 @@ class GoalCoverage(BaseModel):
 
 
 class PlanStep(BaseModel):
+    """One executable outcome contract in an installed plan.
+
+    ``selected_tools``/``preferred_tools`` are retained for checkpoint and
+    LLM compatibility. ``allowed_tools`` is the canonical complete scope;
+    the model validator mirrors the legacy fields so old plans remain
+    executable without making a second planning path.
+    """
+
     step_id: str
     goal: str
     depends_on: list[str] = Field(default_factory=list)
     required_capabilities: list[Capability] = Field(default_factory=list)
     preferred_tools: list[str] = Field(default_factory=list)
     selected_tools: list[str] = Field(default_factory=list)
+    allowed_tools: list[str] = Field(default_factory=list)
+    optional_tools: list[str] = Field(default_factory=list)
+    required_inputs: list[str] = Field(default_factory=list)
     status: Literal["pending", "running", "completed", "failed", "blocked", "skipped"] = "pending"
     plan_id: str | None = None
     query_scope: QueryScope | None = None
     population_id: str | None = None
     completion_condition: CompletionCondition | None = None
+    completion_predicate: CompletionCondition | None = None
+    recovery_policy: dict[str, Any] = Field(default_factory=dict)
     completion_evidence: list[str] = Field(default_factory=list)
     observations: list[dict[str, Any]] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
     result_summary: str | None = None
     error: str | None = None
+
+    @model_validator(mode="after")
+    def normalize_execution_contract(self):
+        canonical = list(dict.fromkeys(self.allowed_tools or self.selected_tools or self.preferred_tools))
+        if self.allowed_tools and self.selected_tools and not set(self.selected_tools) <= set(self.allowed_tools):
+            raise ValueError("selected_tools must be a subset of allowed_tools")
+        self.allowed_tools = canonical
+        if not self.selected_tools:
+            self.selected_tools = list(canonical)
+        if not self.preferred_tools:
+            self.preferred_tools = list(canonical)
+        self.optional_tools = list(dict.fromkeys(self.optional_tools))
+        if not set(self.optional_tools) <= set(self.allowed_tools):
+            raise ValueError("optional_tools must be a subset of allowed_tools")
+        if self.completion_condition is not None and self.completion_predicate is not None:
+            if self.completion_condition.model_dump() != self.completion_predicate.model_dump():
+                raise ValueError("completion_condition and completion_predicate disagree")
+        if self.completion_predicate is None and self.completion_condition is not None:
+            self.completion_predicate = self.completion_condition
+        if self.completion_condition is None and self.completion_predicate is not None:
+            self.completion_condition = self.completion_predicate
+        return self
 
 
 class AgentDecision(BaseModel):

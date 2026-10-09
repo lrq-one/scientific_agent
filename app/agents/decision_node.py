@@ -169,6 +169,7 @@ class DecisionNode:
             "user_question": state.user_request, "goal": state.goal,
             "original_goal_requirements": {"requested_dimensions": state.requested_dimensions,
                                            "required_deliverables": state.required_deliverables},
+            "goal_contract": state.goal_contract.model_dump(mode="json") if state.goal_contract else None,
             "conversation": bounded(state.conversation_context, rows=6),
             "resources": state.resource_summary.model_dump(), "resource_grounding": state.resource_hint,
             "selected_skills": state.selected_skills, "skill_instructions": skill_context,
@@ -185,7 +186,11 @@ class DecisionNode:
             'currently_callable_step_ids':[s.step_id for s in eligible_plan_steps(state)],
             "recorded_row_tables": recorded_row_tables(state),
             "plan_step_tool_scopes": [{"step_id": step.step_id, "status": step.status,
-                                       "allowed_tools": step.selected_tools or step.preferred_tools,
+                                       "allowed_tools": step.allowed_tools or step.selected_tools or step.preferred_tools,
+                                       "optional_tools": step.optional_tools,
+                                       "required_inputs": step.required_inputs,
+                                       "completion_predicate": (step.completion_predicate or step.completion_condition).model_dump(mode="json")
+                                       if (step.completion_predicate or step.completion_condition) else None,
                                        "depends_on": step.depends_on} for step in state.plan],
             "observations": [{"tool_call": call, "result": bounded(result.model_dump(mode="json"))}
                              for call, result in list(zip(state.tool_calls, state.observations))[-6:]],

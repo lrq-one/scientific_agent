@@ -11,20 +11,27 @@ METADATA_TOOLS = SCHEMA_TOOLS | {"text_to_sql", "query_checker"}
 ARTIFACT_TOOLS = {"save_result_table", "save_chart", "plot_metric_comparison"}
 
 
+def allowed_tools_for(step) -> list[str]:
+    """Return the complete authorized tool scope for a PlanStep."""
+    return list(dict.fromkeys(step.allowed_tools or step.selected_tools or step.preferred_tools))
+
+
 def condition_for(step):
-    tools = step.selected_tools or step.preferred_tools
+    tools = [tool for tool in allowed_tools_for(step) if tool not in step.optional_tools]
+    if step.completion_predicate:
+        return step.completion_predicate
     if step.completion_condition:
         return step.completion_condition
     if "execute_readonly_sql" in tools:
         return CompletionCondition(kind="EXECUTED_ROWS", required_tools=["execute_readonly_sql"], require_scope_match=True)
     if set(tools) & ARTIFACT_TOOLS:
         return CompletionCondition(kind="ARTIFACT", required_tools=sorted(set(tools) & ARTIFACT_TOOLS))
-    empirical = [t for t in tools if t not in METADATA_TOOLS]
+    empirical = [t for t in tools if t not in METADATA_TOOLS and t not in step.optional_tools]
     if empirical:
         return CompletionCondition(required_tools=empirical)
     if tools and set(tools) <= SCHEMA_TOOLS:
         return CompletionCondition(kind="SCHEMA", required_tools=[])
-    return CompletionCondition(required_tools=[t for t in tools if t not in SCHEMA_TOOLS])
+    return CompletionCondition(required_tools=[t for t in tools if t not in SCHEMA_TOOLS and t not in step.optional_tools])
 
 
 def satisfied(step):
@@ -41,13 +48,13 @@ def satisfied(step):
 
 
 def step_signature(step):
-    return (re.sub(r"\s+", " ", step.goal).strip(), tuple(sorted(step.selected_tools or step.preferred_tools)),
+    return (re.sub(r"\s+", " ", step.goal).strip(), tuple(sorted(allowed_tools_for(step))),
             condition_for(step).model_dump_json(), step.query_scope.model_dump_json() if step.query_scope else None, step.population_id)
 
 
 def step_action_signature(step):
     """Executable contract, deliberately independent of prose and generated IDs."""
-    return (tuple(sorted(step.selected_tools or step.preferred_tools)), condition_for(step).model_dump_json(),
+    return (tuple(sorted(allowed_tools_for(step))), tuple(sorted(step.optional_tools)), condition_for(step).model_dump_json(),
             step.query_scope.model_dump_json() if step.query_scope else None,
             tuple(sorted(c.value for c in step.required_capabilities)), step.population_id)
 
@@ -79,7 +86,7 @@ def ensure_sql_schema_entrypoint(state, proposal, allowed_tools):
     A valid, already-callable schema step is preserved without modification.
     """
     if state.schema_cache or not any(
-        "text_to_sql" in (step.selected_tools or step.preferred_tools)
+        "text_to_sql" in allowed_tools_for(step)
         for step in proposal
     ):
         return proposal
@@ -103,7 +110,7 @@ def ensure_sql_schema_entrypoint(state, proposal, allowed_tools):
     repaired = [prerequisite]
     for original in proposal:
         step = original.model_copy(deep=True)
-        if "text_to_sql" in (step.selected_tools or step.preferred_tools):
+        if "text_to_sql" in allowed_tools_for(step):
             step.depends_on = list(dict.fromkeys([*step.depends_on, prerequisite_id]))
         repaired.append(step)
     return repaired
@@ -115,12 +122,16 @@ def prepare_replacement(state, plan):
     prepared = []
     for proposal in plan:
         step = proposal.model_copy(deep=True)
+        step.allowed_tools = allowed_tools_for(step)
+        step.selected_tools = list(step.allowed_tools)
+        step.preferred_tools = list(step.allowed_tools)
         from app.services.resource_grounding import effective_scope
-        if step.population_id or set(step.selected_tools or step.preferred_tools) & {"text_to_sql", "query_checker", "execute_readonly_sql"}:
+        if step.population_id or set(allowed_tools_for(step)) & {"text_to_sql", "query_checker", "execute_readonly_sql"}:
             step.query_scope = effective_scope(state, step.population_id)
         else:
             step.query_scope = state.query_scope.model_copy(deep=True)
         step.completion_condition = condition_for(step)
+        step.completion_predicate = step.completion_condition
         step.status, step.observations, step.evidence_ids, step.completion_evidence = "pending", [], [], []
         step.error, step.result_summary, step.plan_id = None, None, new_id
         # Stable semantic contract may map to a different step ID. All verified

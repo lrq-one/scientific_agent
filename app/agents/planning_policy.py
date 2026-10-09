@@ -36,18 +36,29 @@ class PlanningPolicy:
                 return
             visiting.add(step_id)
             step = by_id[step_id]
-            if not set(step.selected_tools or step.preferred_tools) <= allowed_tools:
-                invalid = set(step.selected_tools or step.preferred_tools) - allowed_tools
+            step_tools = set(step.allowed_tools or step.selected_tools or step.preferred_tools)
+            if step.allowed_tools and step.selected_tools and not set(step.selected_tools) <= set(step.allowed_tools):
+                invalid = set(step.selected_tools) - set(step.allowed_tools)
                 raise ValueError(f"invalid tool identifiers {sorted(invalid)}; exact allowed names={sorted(allowed_tools)}")
+            if not step_tools <= allowed_tools:
+                invalid = step_tools - allowed_tools
+                raise ValueError(f"invalid tool identifiers {sorted(invalid)}; exact allowed names={sorted(allowed_tools)}")
+            if not set(step.optional_tools) <= step_tools:
+                raise ValueError(f"step {step_id}: optional_tools must be a subset of allowed_tools")
+            if any(not item or not isinstance(item, str) for item in step.required_inputs):
+                raise ValueError(f"step {step_id}: required_inputs must contain nonempty field names")
             if not {cap.value for cap in step.required_capabilities} <= capabilities:
                 raise ValueError("plan references unavailable capabilities")
             if tool_capabilities is not None:
-                required = {tool_capabilities[t] for t in (step.selected_tools or step.preferred_tools)}
+                required = {tool_capabilities[t] for t in step_tools}
                 declared = {c.value for c in step.required_capabilities}
                 if not required <= declared:
                     raise ValueError(f"step {step_id}: tool capability mismatch; required={sorted(required)}, declared={sorted(declared)}")
-            if step.completion_condition and not set(step.completion_condition.required_tools) <= set(step.selected_tools or step.preferred_tools):
+            condition = step.completion_predicate or step.completion_condition
+            if condition and not set(condition.required_tools) <= step_tools:
                 raise ValueError("completion condition references tools outside step scope")
+            if condition and set(condition.required_tools) & set(step.optional_tools):
+                raise ValueError(f"step {step_id}: completion predicate cannot require optional tools")
             for dependency in step.depends_on:
                 if dependency not in by_id:
                     raise ValueError(f"unknown dependency {dependency!r}; exact step IDs={list(by_id)}")
