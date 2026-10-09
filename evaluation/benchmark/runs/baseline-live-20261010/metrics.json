@@ -16,5 +16,6 @@
     "elapsed_seconds": 165.125
   },
   "execution_scope": "production generation stages only; no PostgreSQL/MinIO/SQL execution",
-  "outcome_rule": "Database cases require a successful scope-verified Text2SQL stage and a grounded response; response-only prose is not scientific task success."
+  "outcome_rule": "Database cases require a successful scope-verified Text2SQL stage and a grounded response; response-only prose is not scientific task success.",
+  "provider_call_count": 55
 }

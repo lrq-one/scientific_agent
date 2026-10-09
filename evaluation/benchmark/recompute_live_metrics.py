@@ -23,6 +23,8 @@ def main() -> None:
         latencies = [row["elapsed_ms"] for row in rows if isinstance(row.get("elapsed_ms"), (int, float))]
         old["task_success_rate"] = round(sum(bool(row.get("task_success")) for row in rows) / len(rows), 4) if rows else None
         old["p95_latency_ms"] = round(sorted(latencies)[min(len(latencies)-1, int((len(latencies)-1)*0.95))], 2) if latencies else None
+        old["provider_call_count"] = sum((stage.get("measured_llm_calls") or 1)
+                                          for row in rows for stage in row.get("stages", []))
         old["outcome_rule"] = "Database cases require a successful scope-verified Text2SQL stage and a grounded response; response-only prose is not scientific task success."
         (run_dir / "metrics.json").write_text(json.dumps(old, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 

@@ -15,6 +15,7 @@
       },
       "provider_usage": {
         "stage_calls": 46,
+        "provider_calls": 55,
         "measured_stage_calls": 42,
         "coverage": 0.913,
         "input_tokens": 104744,
@@ -47,6 +48,7 @@
       },
       "provider_usage": {
         "stage_calls": 46,
+        "provider_calls": 58,
         "measured_stage_calls": 43,
         "coverage": 0.9348,
         "input_tokens": 114134,
@@ -79,6 +81,7 @@
       },
       "provider_usage": {
         "stage_calls": 46,
+        "provider_calls": 58,
         "measured_stage_calls": 33,
         "coverage": 0.7174,
         "input_tokens": 97801,

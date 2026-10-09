@@ -23,5 +23,7 @@
     "estimated_cost_usd": 0.00268149,
     "elapsed_seconds": 15.563
   },
-  "execution_scope": "production generation stages only; no PostgreSQL/MinIO/SQL execution"
+  "execution_scope": "production generation stages only; no PostgreSQL/MinIO/SQL execution",
+  "provider_call_count": 6,
+  "outcome_rule": "Database cases require a successful scope-verified Text2SQL stage and a grounded response; response-only prose is not scientific task success."
 }

@@ -23,7 +23,8 @@ def provider_usage(cases: list[dict[str, Any]]) -> dict[str, Any]:
                 return candidate
         return None
     measured = [stage for stage in stages if all(value(stage, key) is not None for key in ("input_tokens", "output_tokens", "total_tokens"))]
-    return {"stage_calls": len(stages), "measured_stage_calls": len(measured),
+    return {"stage_calls": len(stages), "provider_calls": sum((stage.get("measured_llm_calls") or 1) for stage in stages),
+            "measured_stage_calls": len(measured),
             "coverage": round(len(measured) / len(stages), 4) if stages else None,
             "input_tokens": sum(value(stage, "input_tokens") or 0 for stage in measured),
             "output_tokens": sum(value(stage, "output_tokens") or 0 for stage in measured),

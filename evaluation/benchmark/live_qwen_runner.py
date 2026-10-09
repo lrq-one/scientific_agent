@@ -79,25 +79,27 @@ class RunLedger:
         cny += output_tokens / 1_000_000 * self.output_cny_per_million
         return cny / self.usd_to_cny
 
-    def reserve(self, stage: str, estimate: int) -> None:
+    def reserve(self, stage: str, estimate: int, slots: int = 1) -> None:
         elapsed = (time.monotonic() - self.started) / 60
         estimate = max(1, int(estimate))
+        slots = max(1, int(slots))
         if self.exceeded_reason:
             raise BudgetStop(self.exceeded_reason)
         if elapsed >= self.max_minutes:
             raise BudgetStop("wall-clock cap reached")
         if self.requests >= self.max_requests:
             raise BudgetStop("request cap reached")
-        if self.total_tokens + self.reserved_tokens + estimate > self.max_tokens:
+        if self.total_tokens + self.reserved_tokens + estimate * slots > self.max_tokens:
             raise BudgetStop("token cap reached")
-        if self.cost_usd + self._cost(estimate, 0) > self.max_cost_usd:
+        if self.cost_usd + self._cost(estimate * slots, 0) > self.max_cost_usd:
             raise BudgetStop("cost cap reached")
-        self.requests += 1
-        self.reserved_tokens += estimate
-        self._persist("request_reserved", {"stage": stage, "estimated_tokens": estimate})
+        self.requests += slots
+        self.reserved_tokens += estimate * slots
+        self._persist("request_reserved", {"stage": stage, "estimated_tokens": estimate, "reserved_slots": slots})
 
     def finish(self, stage: str, usage: dict[str, Any] | None, latency_ms: float,
-               error: str | None = None, estimate: int = 0) -> None:
+               error: str | None = None, estimate: int = 0, reserved_slots: int = 1,
+               actual_slots: int | None = None) -> None:
         usage = usage or {}
         inp = usage.get("input_tokens") if isinstance(usage.get("input_tokens"), int) else None
         out = usage.get("output_tokens") if isinstance(usage.get("output_tokens"), int) else None
@@ -105,13 +107,16 @@ class RunLedger:
         if total is None:
             total = max(1, int(estimate))
             self.known_usage = False
-        self.reserved_tokens = max(0, self.reserved_tokens - max(1, int(estimate)))
+        reserved_slots = max(1, int(reserved_slots))
+        actual_slots = max(1, int(actual_slots if actual_slots is not None else reserved_slots))
+        self.reserved_tokens = max(0, self.reserved_tokens - max(1, int(estimate)) * reserved_slots)
+        self.requests -= max(0, reserved_slots - actual_slots)
         self.input_tokens += inp or 0
         self.output_tokens += out or 0
         self.total_tokens += total
         if inp is None or out is None:
             self.known_usage = False
-        self.cost_usd += self._cost(inp, out) if inp is not None and out is not None else self._cost(0, max(1, int(estimate)))
+        self.cost_usd += self._cost(inp, out) if inp is not None and out is not None else self._cost(0, max(1, int(estimate)) * actual_slots)
         if self.total_tokens > self.max_tokens:
             self.exceeded_reason = "token cap reached after provider usage"
         elif self.cost_usd > self.max_cost_usd:
@@ -189,8 +194,9 @@ def _synthetic_cases(cases_path: Path, count: int = 10) -> list[dict[str, Any]]:
 
 
 async def _call(ledger: RunLedger, stage: str, estimate: int,
-                fn: Callable[[], Awaitable[Any]], timeout_seconds: float = 45.0) -> tuple[Any | None, dict[str, Any]]:
-    ledger.reserve(stage, estimate)
+                fn: Callable[[], Awaitable[Any]], timeout_seconds: float = 45.0,
+                request_slots: int = 1) -> tuple[Any | None, dict[str, Any]]:
+    ledger.reserve(stage, estimate, request_slots)
     started = time.perf_counter()
     try:
         result = await asyncio.wait_for(fn(), timeout=timeout_seconds)
@@ -199,10 +205,13 @@ async def _call(ledger: RunLedger, stage: str, estimate: int,
             result, telemetry = result
         elif isinstance(result, tuple) and len(result) == 3 and isinstance(result[2], dict):
             telemetry = result[2]
-        ledger.finish(stage, telemetry, (time.perf_counter() - started) * 1000, estimate=estimate)
+        actual_slots = telemetry.get("measured_llm_calls") if isinstance(telemetry.get("measured_llm_calls"), int) else request_slots
+        ledger.finish(stage, telemetry, (time.perf_counter() - started) * 1000, estimate=estimate,
+                      reserved_slots=request_slots, actual_slots=actual_slots)
         return result, {"stage": stage, "success": True, "latency_ms": round((time.perf_counter() - started) * 1000, 2), **telemetry}
     except Exception as exc:  # real provider/schema failures are recorded, never fabricated away
-        ledger.finish(stage, {}, (time.perf_counter() - started) * 1000, type(exc).__name__, estimate)
+        ledger.finish(stage, {}, (time.perf_counter() - started) * 1000, type(exc).__name__, estimate,
+                      reserved_slots=request_slots, actual_slots=request_slots)
         failure = {"stage": stage, "success": False, "latency_ms": round((time.perf_counter() - started) * 1000, 2),
                    "error_type": type(exc).__name__, "error": str(exc)[:500]}
         # SQLScopeValidationError intentionally exposes a diagnostic-only
@@ -328,7 +337,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                  "sql_candidate": row.get("sql_candidate", {}), "artifacts": [],
                  "uncertainties": ["No database execution is performed by this isolated benchmark."]}
         response, response_tel = await _call(ledger, "grounded_response", len(goal) // 4 + 5600,
-            lambda: GroundedResponseService().generate(goal, facts))
+            lambda: GroundedResponseService().generate(goal, facts), request_slots=3)
         row["stages"].append(response_tel)
         row["response_success"] = response is not None
         row["elapsed_ms"] = round((time.perf_counter() - case_started) * 1000, 2)

@@ -15,9 +15,9 @@ generated SQL was never sent to a database. Each request was sequential, had a
 45-second provider timeout, and every retry/failure counted.
 
 The three main runs used a per-run ceiling of 80 requests / 500,000 charged
-tokens / $10 / 40 minutes. Aggregate main-run usage was 128 requests and
-434,893 conservatively charged tokens. The focused C replay added 14 requests
-and 42,532 charged tokens. Aggregate observed usage was therefore 142 requests
+tokens / $10 / 40 minutes. Aggregate main-run usage was 171 provider requests and
+434,893 conservatively charged tokens. The focused C replay added 18 provider requests
+and 42,532 charged tokens. Aggregate observed usage was therefore 189 provider requests
 and 477,425 charged tokens, below the round limits of 250 requests,
 1,500,000 tokens and $30. The conservative ledger estimated $0.08534 USD;
 provider usage metadata was incomplete on some failure paths, so unknown total
@@ -29,9 +29,9 @@ rates: [Alibaba Cloud Model Studio pricing](https://help.aliyun.com/en/model-stu
 
 | run | checkout SHA | cases | requests | task success | p95 case latency | measured provider stages |
 |---|---|---:|---:|---:|---:|---:|
-| Baseline | `209fda8ecc15f130260b28af3e0dfdeb5fe6f9b4` | 10 | 46 | 0.60 | 21,213.86 ms | 42/46 |
-| Optimized | `8e908aced7e39ac8cf31ff70e1f9cc957ebf621e` | 10 | 46 | 0.70 | 22,928.77 ms | 43/46 |
-| No-Skill ablation | `8e908aced7e39ac8cf31ff70e1f9cc957ebf621e` | 10 | 36 | 0.70 | 17,617.16 ms | 33/46 |
+| Baseline | `209fda8ecc15f130260b28af3e0dfdeb5fe6f9b4` | 10 | 55 | 0.60 | 21,213.86 ms | 42/46 |
+| Optimized | `8e908aced7e39ac8cf31ff70e1f9cc957ebf621e` | 10 | 58 | 0.70 | 22,928.77 ms | 43/46 |
+| No-Skill ablation | `8e908aced7e39ac8cf31ff70e1f9cc957ebf621e` | 10 | 58 | 0.70 | 17,617.16 ms | 33/46 |
 
 Task success is intentionally strict: A file-only case needs a grounded
 response; B/C/D08 database cases additionally require a successful
