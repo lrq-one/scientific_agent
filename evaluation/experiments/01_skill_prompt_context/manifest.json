@@ -8,7 +8,7 @@
     "historical_metric_sha": "not_recorded_in_phase4_run_manifest"
   },
   "optimized": {
-    "sha": "4927f4b2b24823325e06acee7ee6b39009610066",
+    "sha": "56fac82ab8f96d884820d3a23441bb9b6ac03624",
     "code_path": "app/services/skills.py; app/services/prompt_catalog.py; app/services/context_projection.py"
   },
   "cases": {

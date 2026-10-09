@@ -51,7 +51,9 @@ def write_track(spec: dict) -> None:
     write_gold(rows, directory / "gold.jsonl", tuple(spec.get("gold_fields", ())))
     cases_hash = sha256(directory / "cases.jsonl")
     gold_hash = sha256(directory / "gold.jsonl")
-    current_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    # Documentation commits must not masquerade as an optimized production
+    # implementation SHA; select the latest commit that changed app/prompts.
+    current_sha = subprocess.check_output(["git", "rev-list", "-1", "HEAD", "--", "app", "prompts"], cwd=ROOT, text=True).strip()
     manifest = {
         "schema_version": "scientific-agent-six-track-v1",
         "track_id": spec["id"],
