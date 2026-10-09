@@ -1,0 +1,106 @@
+import assert from 'node:assert/strict'
+import { chromium } from 'playwright'
+import { mkdir, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+
+const output = path.resolve('../reports/ui_acceptance_20261008')
+await mkdir(output, { recursive: true })
+const browser = await chromium.launch({ executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: true })
+const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+const requests = [], pageErrors = [], checks = []
+page.on('pageerror', e => pageErrors.push(e.message))
+page.on('request', r => { if (r.url().includes(':8000/')) requests.push({ method: r.method(), url: r.url() }) })
+page.on('dialog', async d => { pageErrors.push(`Unexpected native dialog: ${d.type()}`); await d.dismiss() })
+async function geometry() {
+  return page.evaluate(() => {
+    const box = selector => { const el = document.querySelector(selector), r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height, scrollTop: el.scrollTop, clientHeight: el.clientHeight, scrollHeight: el.scrollHeight } }
+    return { viewport: innerHeight, documentHeight: document.documentElement.scrollHeight, windowY: scrollY,
+      sidebar: box('.sidebar'), status: box('.side-note'), center: box('.messages'), right: box('.progress-panel'), history: box('.conversation-list'), composer: box('.composer') }
+  })
+}
+try {
+  await page.goto('http://127.0.0.1:5173/c/29de1c1c-5962-4f1f-bc1e-d3c7210166f0')
+  await page.locator('.history-loading').waitFor({ state: 'hidden' })
+  await page.locator('.messages').waitFor()
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 1280, height: 720 }, { width: 1280, height: 540 }]) {
+    await page.setViewportSize(viewport)
+    await page.evaluate(() => { for (const selector of ['.conversation-list', '.messages']) document.querySelector(selector).scrollTop = 0 })
+    const before = await geometry()
+    assert(before.documentHeight <= viewport.height + 1)
+    assert(before.status.bottom <= viewport.height && before.status.top >= 0)
+    assert(before.composer.bottom <= viewport.height)
+    assert(before.history.scrollHeight > before.history.clientHeight)
+    assert(before.center.scrollHeight > before.center.clientHeight)
+    const left = await page.locator('.conversation-list').boundingBox()
+    await page.mouse.move(left.x + left.width / 2, left.y + left.height / 2)
+    await page.mouse.wheel(0, 1200); await page.waitForTimeout(200)
+    const afterLeft = await geometry()
+    assert(afterLeft.history.scrollTop > before.history.scrollTop)
+    assert.equal(afterLeft.right.top, before.right.top)
+    assert.equal(afterLeft.right.bottom, before.right.bottom)
+    assert.equal(afterLeft.windowY, 0)
+    const center = await page.locator('.messages').boundingBox()
+    await page.mouse.move(center.x + center.width / 2, center.y + center.height / 2)
+    await page.mouse.wheel(0, 1200); await page.waitForTimeout(200)
+    const afterCenter = await geometry()
+    assert(afterCenter.center.scrollTop > before.center.scrollTop)
+    assert.equal(afterCenter.right.top, before.right.top)
+    assert.equal(afterCenter.status.bottom, before.status.bottom)
+    assert.equal(afterCenter.windowY, 0)
+    checks.push({ viewport, before, afterLeft, afterCenter })
+  }
+  await page.screenshot({ path: path.join(output, 'layout-independent-scroll.png') })
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const createdResponse = page.waitForResponse(r => r.request().method() === 'POST' && r.url().endsWith('/api/conversations'))
+  await page.locator('.new-task').click()
+  const fixture = await (await createdResponse).json()
+  await page.waitForURL(`**/c/${fixture.id}`)
+  const row = page.locator(`[data-conversation-id="${fixture.id}"]`)
+  const dialog = page.locator('dialog[open]')
+  await row.locator('[title="重命名"]').click()
+  await dialog.locator('input').fill('  ')
+  assert(await dialog.locator('button[type=submit]').isDisabled())
+  await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' })
+  await row.locator('[title="重命名"]').click()
+  await dialog.locator('input').fill('网络失败不应保存此标题')
+  await page.context().setOffline(true)
+  await dialog.locator('button[type=submit]').click()
+  await dialog.locator('[role=alert]').waitFor()
+  assert(!(await dialog.locator('button[type=button]').isDisabled()))
+  await page.context().setOffline(false)
+  await dialog.locator('button[type=button]').click()
+  assert.equal(await row.locator('b').innerText(), fixture.title)
+  await row.locator('[title="重命名"]').click()
+  const title = 'UI 布局与弹窗验收（临时空会话）' + '长标题'.repeat(20)
+  await dialog.locator('input').fill(title)
+  const rect = await dialog.boundingBox()
+  assert(Math.abs(rect.x + rect.width / 2 - 720) < 2)
+  assert(Math.abs(rect.y + rect.height / 2 - 500) < 2)
+  await page.screenshot({ path: path.join(output, 'layout-centered-rename.png') })
+  const renamed = page.waitForResponse(r => r.request().method() === 'PATCH' && r.url().endsWith(`/api/conversations/${fixture.id}`))
+  await dialog.locator('button[type=submit]').click()
+  assert((await renamed).ok())
+  await dialog.waitFor({ state: 'hidden' })
+  assert.equal(await row.locator('b').innerText(), title)
+  await page.reload(); await row.waitFor(); await page.locator('.history-loading').waitFor({ state: 'hidden' })
+  assert.equal(await row.locator('b').innerText(), title)
+  await row.locator('[title="删除"]').click()
+  const deletesBefore = requests.filter(r => r.method === 'DELETE').length
+  await dialog.locator('button[type=button]').click()
+  assert.equal(requests.filter(r => r.method === 'DELETE').length, deletesBefore)
+  await row.locator('[title="删除"]').click()
+  await page.screenshot({ path: path.join(output, 'layout-centered-delete.png') })
+  const deleted = page.waitForResponse(r => r.request().method() === 'DELETE' && r.url().endsWith(`/api/conversations/${fixture.id}`))
+  await dialog.locator('button[type=submit]').click()
+  assert((await deleted).ok())
+  await dialog.waitFor({ state: 'hidden' }); await row.waitFor({ state: 'detached' })
+  assert.notEqual(page.url(), `http://127.0.0.1:5173/c/${fixture.id}`)
+  assert(!requests.some(r => r.method === 'POST' && /chat\/stream|resume/.test(r.url)))
+  assert.deepEqual(pageErrors, [])
+  await writeFile(path.join(output, 'layout-acceptance.json'), JSON.stringify({ result: 'PASS', checks, fixtureId: fixture.id,
+    deletedOnlyTemporaryEmptyConversation: true, renameNetworkFailureRecovered: true, modalCenter: rect, requests, pageErrors, newAgentExecutions: 0 }, null, 2))
+  console.log(JSON.stringify({ result: 'PASS', viewports: checks.map(c => c.viewport), independentScroll: true, centeredRenameDelete: true, newAgentExecutions: 0 }))
+} catch (error) {
+  await page.screenshot({ path: path.join(output, 'layout-failure.png') })
+  throw error
+} finally { await browser.close() }

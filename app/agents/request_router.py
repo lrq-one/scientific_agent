@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.services.resource_grounding import mentioned
 
 import re
 import os
@@ -15,6 +16,43 @@ COMPLEX_WORDS = ("比较", "分析为什么", "并检查", "以及", "综合", "
 MCP_WORDS = ("smiles", "分子特征", "molecule features", "molecule_id", "分子 id", "分子id")
 
 
+def resource_constraint(query: str) -> str:
+    text = query.lower()
+    files = bool(re.search(r"[\w.-]+\.(?:csv|xlsx|xls)\b|\b(?:csv|xlsx|excel)\b|文件|表格", text))
+    database = any(word in text for word in DB_WORDS) or bool(re.search(r"train[_-]?v\d+", text))
+    if files:
+        return "MIXED" if database else "FILE_ONLY"
+    if database:
+        return "DATABASE_ONLY"
+    if any(word in text for word in MCP_WORDS) or re.search(r"\b[mt]\d{3,}\b", text):
+        return "MCP"
+    return "AUTO"
+
+
+def validate_intent_against_resource_constraints(intent: RequestIntent, query: str, resources: ResourceSummary) -> RequestIntent:
+    constraint = resource_constraint(query)
+    grounded = {
+        "FILE_ONLY": ("file_analysis", [Capability.FILE]),
+        "DATABASE_ONLY": ("database_analysis", [Capability.DATABASE]),
+        "MIXED": ("mixed_analysis", [Capability.FILE, Capability.DATABASE]),
+        "MCP": ("general", [Capability.MCP]),
+    }.get(constraint)
+    if grounded:
+        intent.task_type, intent.required_capabilities = grounded
+        intent.required_capabilities = [cap for cap in intent.required_capabilities
+            if cap == Capability.FILE or (cap == Capability.DATABASE and resources.authorized_datasources)
+            or (cap == Capability.MCP and resources.available_mcp_tools)]
+        intent.reason += f"; hard resource constraint={constraint}"
+        if constraint == "MIXED" and resources.available_mcp_tools and (
+            any(word in query.lower() for word in MCP_WORDS) or re.search(r"\b[MT]\d{3,}\b", query, flags=re.I)
+        ):
+            intent.required_capabilities.append(Capability.MCP)
+    if not resources.available_scientific_models:
+        intent.required_capabilities = [cap for cap in intent.required_capabilities if cap != Capability.SCIENTIFIC_MODEL]
+    intent.goal = query.strip()
+    return intent
+
+
 class RequestRouter:
     """Deterministic-first router with a stable structured result.
 
@@ -24,6 +62,20 @@ class RequestRouter:
 
     def __init__(self, llm: Any | None = None):
         self.llm = llm
+
+    def context_hint(self, query: str, resources: ResourceSummary) -> dict[str, Any]:
+        """Fact grounding only. Does not choose an intent, plan or tool."""
+        mentioned_files = list(dict.fromkeys(re.findall(r"[\w.-]+\.(?:csv|xlsx|xls)\b", query, re.I)))
+        return {
+            "mentioned_files": mentioned_files,
+            "missing_files": [name for name in mentioned_files if name not in resources.available_files],
+            "mentioned_datasources": [name for name in resources.authorized_datasources if name in query],
+            "dataset_versions": [str(v.get("version", v.get("version_name", v.get("label"))))
+                for v in resources.resource_metadata.get("dataset_versions", [])
+                if any(mentioned(v.get(k), query)
+                       for k in ("id", "version", "version_name", "label"))],
+            "resources": resources.model_dump(mode="json"),
+        }
 
     def route(self, query: str, resources: ResourceSummary) -> RequestIntent:
         text = query.strip().lower()
@@ -62,7 +114,7 @@ class RequestRouter:
             or sum(word in text for word in COMPLEX_WORDS) >= 2
         )
         domain = "mass_spec" if any(w in text for w in ("rt", "质谱", "fused", "分子", "smiles")) else "general"
-        return RequestIntent(
+        return validate_intent_against_resource_constraints(RequestIntent(
             goal=query.strip(),
             domain=domain,
             task_type=task_type,
@@ -70,7 +122,7 @@ class RequestRouter:
             required_capabilities=required,
             need_planning=complex_task,
             reason="deterministic resource-aware routing",
-        )
+        ), query, resources)
 
     def _configured_llm(self):
         if self.llm is not None:
@@ -92,8 +144,8 @@ class RequestRouter:
         deterministic = self.route(query, resources)
         # Explicit filenames plus an authorized datasource are a structural
         # resource constraint, not an ambiguous semantic classification.
-        if deterministic.task_type == "mixed_analysis" and re.search(r"[\w.-]+\.(?:csv|xlsx|xls)", query, re.I):
-            deterministic.reason += "; explicit file+database resource constraint"
+        if resource_constraint(query) in {"FILE_ONLY", "MIXED", "MCP"}:
+            deterministic.reason += "; explicit file+database resource constraint" if resource_constraint(query) == "MIXED" else "; explicit resource grounding"
             return deterministic
         # Unambiguous one-resource tasks stay on the zero-latency fast path.
         if deterministic.complexity == "simple" and deterministic.task_type in {"file_analysis", "database_analysis"}:
@@ -127,5 +179,5 @@ class RequestRouter:
         candidate.required_capabilities = [cap for cap in candidate.required_capabilities if cap in allowed]
         candidate.goal = query.strip()
         candidate.reason = f"LLM structured understanding; resource-filtered. {candidate.reason}"
-        return candidate
+        return validate_intent_against_resource_constraints(candidate, query, resources)
 

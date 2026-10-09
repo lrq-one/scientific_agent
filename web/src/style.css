@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
 :root { font-family: 'DM Sans','Noto Sans SC',sans-serif; color:#17233d; background:#f4f7fb; font-synthesis:none; }
 * { box-sizing:border-box; } body { margin:0; min-width:1100px; } button,textarea,input { font:inherit; }
-.app-shell { min-height:100vh; display:flex; background:radial-gradient(circle at 45% 0,#fff 0,#f5f8fc 36%,#eef3f9 100%); }
+.app-shell { height:100vh;height:100dvh;min-height:0; display:flex;overflow:hidden; background:radial-gradient(circle at 45% 0,#fff 0,#f5f8fc 36%,#eef3f9 100%); }
 .sidebar { width:248px; padding:26px 18px; background:#101c33; color:#fff; display:flex; flex-direction:column; box-shadow:12px 0 32px #14213d16; }
 .brand { display:flex; gap:12px; align-items:center; padding:0 8px 26px; border-bottom:1px solid #ffffff12; }
 .brand-mark { width:38px;height:38px;display:grid;place-items:center;border-radius:12px;background:linear-gradient(135deg,#54d5c3,#477cf4);font-size:20px;font-weight:700;box-shadow:0 8px 25px #30bca643; }
@@ -67,6 +67,30 @@ body{min-width:0}
 
 
 /* Runtime readiness should reflect backend reality, not a static green label. */
+html,body,#app{height:100%;overflow:hidden}
+.sidebar{flex:none;min-height:0;overflow:hidden}
+main{height:100%;min-height:0;overflow:hidden}
+.brand,.new-task,.side-note,header,.resource-bar,.composer,.hitl,.panel-title{flex-shrink:0}
+.content-grid{grid-template-rows:minmax(0,1fr);overflow:hidden}
+.conversation-list,.messages,.timeline{min-height:0;overscroll-behavior:contain;scrollbar-gutter:stable}
+.messages{overflow-y:auto;overflow-x:hidden}
+.welcome{min-height:0;overflow:auto}
+.trace-card{min-height:0;flex-shrink:0}
+.side-note{margin-top:12px}
+.conversation-dialog{width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 40px);overflow:auto;margin:auto;border:1px solid #dce5ef;border-radius:14px;padding:24px;color:#17233d;background:#fff;box-shadow:0 20px 70px #101c3340}
+.conversation-dialog::backdrop{background:#101c3366;backdrop-filter:blur(3px)}
+.conversation-dialog h2{font-size:18px;margin:0 0 18px}
+.conversation-dialog label{display:block;font-size:12px;margin-bottom:8px;color:#53647d}
+.conversation-dialog input{width:100%;border:1px solid #b9c9de;border-radius:8px;padding:10px;outline-color:#3e8bfa}
+.conversation-dialog p{font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
+.dialog-actions button{border:1px solid #dbe3ee;border-radius:8px;padding:9px 16px;background:#f5f8fc;cursor:pointer}
+.dialog-actions button[type=submit]{background:#2878ed;color:#fff;border-color:#2878ed}
+.dialog-actions button.danger{background:#cf4141;border-color:#cf4141}
+.dialog-actions button:disabled{opacity:.5;cursor:not-allowed}
+.dialog-error{color:#bd3636;background:#fff2f2;padding:10px;border-radius:8px}
+@media(max-width:900px){.content-grid{grid-template-rows:minmax(0,1fr) minmax(0,.65fr)}.progress-panel{max-height:none}}
+@media(max-width:620px){.app-shell{display:flex}.sidebar{width:150px;max-height:none}.side-note{display:flex}main{height:100%;min-height:0}.content-grid{display:grid;grid-template-rows:minmax(0,1fr) minmax(0,.65fr)}.conversation,.progress-panel{min-height:0}}
 .side-note.not-ready .pulse-dot{background:#e3a33a;box-shadow:0 0 0 4px #e3a33a1b}
 .side-note.not-ready b{color:#f0c06e}
 .side-note.not-ready small{color:#a58e69}

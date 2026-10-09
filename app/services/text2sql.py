@@ -7,11 +7,25 @@ from time import perf_counter
 from typing import Any, Protocol
 
 from rank_bm25 import BM25Okapi
+import sqlglot
+from sqlglot import exp
+from app.tools.sql_guard import SQLGuardError
 
 from app.models.schemas import SQLCandidate
 from app.config import ALLOW_DETERMINISTIC_LLM_FALLBACK
 from app.services.llm_config import llm_settings
 from app.services.llm_telemetry import UsageCollector
+
+
+class SQLScopeValidationError(ValueError):
+    """Keep rejected generated SQL as diagnostics, never as executed evidence."""
+    def __init__(self, error, candidate, metadata):
+        super().__init__(str(error))
+        self.candidate = candidate
+        self.metadata = {**metadata, "sql_candidate": candidate.model_dump(mode="json"),
+                         "scope_validation": {"verified": False, "status": "UNVERIFIED", "reason": str(error)},
+                         "recovery": {"failed_stage": "sql_scope_validation",
+                                      "instruction": "The supplied QueryScope is unchanged. Repair the SQL predicate/lineage, or retrieve missing authorized schema; renaming a Plan or dropping scope does not repair SQL."}}
 
 
 def tokenize(text: str) -> list[str]:
@@ -100,6 +114,18 @@ class SchemaRetriever:
 
 
 class TextToSQLService:
+    @staticmethod
+    def validate_goal_projection(sql: str, goal: str) -> None:
+        if not re.search(r"(?:不同|各|所有|每种|按).{0,8}结构类型|(?:different|each|all|by).{0,20}structure[_ ]types?", goal, re.I):
+            return
+        if re.search(r"其他|others?", goal, re.I):
+            return
+        parsed = sqlglot.parse_one(re.sub(r"%\([A-Za-z_][A-Za-z0-9_]*\)s", "'__bound_param__'", sql), read="postgres")
+        for selection in parsed.find_all(exp.Select):
+            for projection in selection.expressions:
+                if projection.alias_or_name.lower() == "structure_type" and projection.find(exp.Case):
+                    raise SQLGuardError("column structure_type grouping collapses original categories and does not answer the goal")
+
     def __init__(self, llm: Any | None = None):
         self.llm = llm
         self.retriever = SchemaRetriever()
@@ -130,17 +156,21 @@ class TextToSQLService:
         dataset_version: str | None = None,
         repair_feedback: str | None = None,
         skill_context: str | None = None,
+        original_goal: str | None = None,
+        query_scope=None,
+        resource_binding=None,
     ) -> str:
         dataset_constraint = ""
-        if dataset_version:
+        if dataset_version and query_scope is None:
             dataset_constraint = (
                 f"Dataset version: {dataset_version}. The query must constrain results to this exact "
                 "dataset version using the appropriate version table/column, the named placeholder "
                 "%(dataset_version)s, and params.dataset_version.\n"
             )
         repair_constraint = (
-            f"Previous candidate failed PostgreSQL validation: {repair_feedback[:300]}. "
-            "Use only columns and aliases present in the supplied schema; return a corrected query.\n"
+            f"Actual validation feedback and previous SQL (do not invent a different error):\n{repair_feedback[:3000]}\n"
+            "Correct this exact failure while preserving the original analytical goal. "
+            "Use only columns and aliases present in the supplied schema.\n"
             if repair_feedback else ""
         )
         skill_constraint = (
@@ -150,13 +180,30 @@ class TextToSQLService:
         return (
             "Generate one parameterized PostgreSQL read-only query as SQLCandidate.\n"
             f"Goal: {goal}\nCurrent step: {current_step}\nDatasource: {datasource}\n"
+            f"Original User Goal (immutable): {original_goal or goal}\n"
+            f"QueryScope (authoritative): {query_scope.model_dump_json() if query_scope else '{}'}\n"
+            "This QueryScope is the EFFECTIVE population for this one query. The original goal may require other independent populations, fulfilled by separate executions. Do not impose a sibling population's version/split or combine them unless this scope requires it. all_versions requires exactly the authorized version IDs/labels in its scope, never an unrestricted global database scan.\n"
+            f"ResourceBinding (labels and primary keys are distinct): {resource_binding.model_dump_json() if resource_binding else '{}'}\n"
             f"{skill_constraint}"
             f"{dataset_constraint}"
             f"{repair_constraint}"
             f"Relevant schema: {json.dumps(schema, ensure_ascii=False)}\n"
             f"Relationships: {json.dumps(relationships, ensure_ascii=False)}\n"
             f"Allowed tables: {list(schema)}\n"
-            "Constraints: exactly one SELECT or WITH SELECT; no DML/DDL; use named psycopg params; no comments."
+            "The supplied schema is inspected but may be incomplete. If a required split/version column or population table is missing, retrieve authorized schema before assuming the operation is unsupported. "
+            "A scope validation error describes the generated SQL, NOT a missing QueryScope input. Correct the rejected SQL using actual feedback; do not repeat it or remove required constraints. "
+            "Constraints: exactly one SELECT or WITH SELECT; no DML/DDL; use named psycopg params; no comments. "
+            "Every parameter must use the exact named placeholder %(parameter_name)s with the same key in params. "
+            "Never use positional %s, ?, or :name with a params dictionary. For a comparison of runs, include all requested runs in the query, not only the first run. "
+            "When asked for each/different structure type, group by original structure_type values; "
+            "never collapse categories into fused-ring/other unless explicitly requested. "
+            "Answer the original analytical outcome and observation-selected subgroup, not just a narrowed local description. "
+            "When both an overall total and subgroup counts are requested, return both explicitly, preserving the actual counting unit and avoiding JOIN-induced duplicates. "
+            "For coverage, absence, or membership comparisons preserve the relevant base population, including non-members and zero-count groups. "
+            "Do not put a nullable LEFT JOIN right-side version/split predicate in WHERE when that eliminates the absent records the question asks about; filter the joined membership in ON, a filtered CTE, or EXISTS instead. "
+            "Distinguish membership in a dataset version from the actual train split. Return enough grouped counts/denominators to answer the requested coverage question. "
+            "用户要求不同/各结构类型时，必须使用 schema 中真实的 structure_type 列分组；"
+            "包括 fused-ring 不代表只分 fused/non-fused 两组。用户目标优先于 Skill 示例。"
         )
 
     async def generate(
@@ -169,8 +216,14 @@ class TextToSQLService:
         dataset_version: str | None = None,
         repair_feedback: str | None = None,
         skill_context: str | None = None,
+        original_goal: str | None = None,
+        query_scope=None,
+        resource_binding=None,
     ) -> tuple[SQLCandidate, dict[str, Any]]:
-        relevant = self.retriever.retrieve(goal, full_schema)
+        relevant = self.retriever.retrieve((original_goal or "") + "\n" + goal, full_schema)
+        if query_scope and (query_scope.dataset_version or query_scope.all_versions):
+            for name in ("dataset_versions", "datasets", "training_memberships"):
+                if name in full_schema: relevant[name] = full_schema[name]
         related_names = set(relevant)
         for relation in relationships:
             if relation.get("source_table") in related_names:
@@ -193,6 +246,7 @@ class TextToSQLService:
                         dataset_version,
                         repair_feedback,
                         skill_context,
+                        original_goal, query_scope, resource_binding,
                     ),
                     config={"callbacks": [collector]},
                 )
@@ -204,14 +258,26 @@ class TextToSQLService:
                         "http_status": None, "fallback": False, **collector.snapshot(),
                     },
                 }
-                if dataset_version and "%(dataset_version)s" not in candidate.sql:
+                if dataset_version and query_scope is None and "%(dataset_version)s" not in candidate.sql:
                     raise ValueError("SQLCandidate did not bind the requested dataset_version")
-                if dataset_version:
+                if dataset_version and query_scope is None:
                     # The model chooses SQL structure; the trusted HITL/request value owns binding.
                     metadata["parameter_binding_repaired"] = candidate.params.get("dataset_version") != dataset_version
                     candidate.params["dataset_version"] = dataset_version
+                if query_scope:
+                    from app.services.query_scope import validate_scope
+                    candidate.query_scope = query_scope.model_copy(deep=True)
+                    try:
+                        metadata["scope_validation"] = validate_scope(candidate.sql, candidate.params, query_scope, full_schema)
+                    except ValueError as error:
+                        raise SQLScopeValidationError(error, candidate, metadata) from error
+                    candidate.query_scope = query_scope.model_validate(metadata['scope_validation']['effective_query_scope']) if metadata['scope_validation'].get('effective_query_scope') else candidate.query_scope
                 return candidate, metadata
             except Exception as exc:
+                if isinstance(exc, SQLScopeValidationError):
+                    raise
+                if isinstance(exc, ValueError) and str(exc).startswith("QueryScope"):
+                    raise ValueError(str(exc)) from None
                 if not ALLOW_DETERMINISTIC_LLM_FALLBACK:
                     raise RuntimeError(
                         f"real Text-to-SQL LLM call failed ({type(exc).__name__}); deterministic fixture fallback is disabled"

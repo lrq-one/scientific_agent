@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import asyncio
+import re
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
@@ -16,22 +18,25 @@ from app.models.schemas import (
     ConversationPatch,
     ResumeRequest,
     SSEEvent,
+    TaskRefinementPatch,
 )
 from app.services.conversation_history import ActiveTaskConflict, ConversationNotFound, conversation_repository
 from app.services.conversation_policy import conversation_policy
+from app.services.security_policy import security_policy, REFUSAL_ANSWER
+from app.services.execution_context import execution_identity
 from app.services.followup import (
-    REUSE_TYPES,
     ConversationContextResolver,
+    StateSufficiencyResolver,
     build_provenance,
-    parse_refinement_patch,
-    provenance_answer,
-    render_persisted_table,
+    conversation_context_summary,
     workflow_query,
 )
 from app.services.resources import ResourceService
 from app.services.runtime_health import runtime_readiness
 from app.services.workspace import WorkspaceError, WorkspaceService
 from app.services.object_storage import ObjectStorageService
+from app.services.grounded_response import GroundedResponseService
+from app.services.evaluation_variant import VARIANT
 
 
 router = APIRouter()
@@ -40,7 +45,19 @@ workspace = WorkspaceService()
 storage = ObjectStorageService(workspace=workspace)
 resources = ResourceService(workspace, storage)
 followup_resolver = ConversationContextResolver()
+grounded_responses = GroundedResponseService()
 running_tasks: dict[str, asyncio.Task] = {}
+
+
+def execution_failure(exc, stage, *, task_id=None, conversation_id=None, thread_id=None):
+    """Public failure correlation, including exceptions with an empty message."""
+    reason = str(exc).strip() or type(exc).__name__
+    reason = re.sub(r"sk-[A-Za-z0-9_-]{12,}", "[REDACTED_KEY]", reason)[:600]
+    return {"error": reason, "failure_code": "EXECUTION_TIMEOUT" if isinstance(exc, TimeoutError) else "EXECUTION_FAILED",
+            "failed_stage": stage, "exception_type": type(exc).__name__, "reason_summary": reason,
+            "recoverable": False, "task_id": task_id, "conversation_id": conversation_id, "thread_id": thread_id,
+            "plan_id": None, "step_id": None, "tool_call_id": None,
+            "retry_count": None, "replan_count": None, "resource_scope": None}
 
 
 def current_user(x_user_id: str | None = Header(default=None)) -> str:
@@ -67,15 +84,25 @@ async def replay_task_events(repository, conversation_id: str, task_id: str, aft
             ))
         status = repository.task_status(task_id, conversation_id)
         if status in {"completed", "failed", "cancelled", "waiting_for_user"}:
+            # The worker may commit its terminal event between the first read
+            # and the status read; drain it before closing the stream.
+            for row in repository.events_after(task_id, cursor):
+                cursor = row["id"]
+                payload = row["payload_json"] or {}
+                yield f"id: {cursor}\n" + encode_sse(SSEEvent(
+                    event=row["event_type"], message=payload.get("message", ""),
+                    data={key: value for key, value in payload.items() if key != "message"},
+                ))
             return
         await asyncio.sleep(0.2)
 
 
 def start_background_task(task_id: str, repository, worker):
     async def run():
+        token = execution_identity.set({"task_id": task_id, "conversation_id": repository.conversation_for_task(task_id)})
         try:
             async for _ in worker:
-                pass
+                await asyncio.sleep(0)
         except asyncio.CancelledError:
             pass
         except Exception as exc:
@@ -84,14 +111,17 @@ def start_background_task(task_id: str, repository, worker):
             })
             repository.update_task(task_id, status="failed")
         finally:
-            if repository.is_cancelled(task_id):
+            owns_worker = running_tasks.get(task_id) is asyncio.current_task()
+            if owns_worker and repository.is_cancelled(task_id):
                 repository.finish_cancellation(task_id)
-            elif repository.task_status(task_id, repository.conversation_for_task(task_id)) == "running":
+            elif owns_worker and repository.task_status(task_id, repository.conversation_for_task(task_id)) == "running":
                 repository.add_event(task_id, "ERROR", {
                     "message": "任务未产生最终结果", "task_id": task_id, "error_type": "MissingTerminalEvent",
                 })
                 repository.update_task(task_id, status="failed")
-            running_tasks.pop(task_id, None)
+            if owns_worker:
+                running_tasks.pop(task_id, None)
+            execution_identity.reset(token)
     running_tasks[task_id] = asyncio.create_task(run(), name=f"scientific-task:{task_id}")
 
 
@@ -127,7 +157,12 @@ def ready():
 
 @router.post("/api/chat/stream")
 async def chat_stream(request: ChatRequest, user_id: str = Depends(current_user)):
+    security = await security_policy.resolve_async(request.query)
     async def generate():
+        if security.action != "ALLOW":
+            yield encode_sse(SSEEvent(event="SECURITY_DECISION", message="请求未获执行许可", data={**security.model_dump(), "new_tool_calls": 0}))
+            yield encode_sse(SSEEvent(event="FINAL_ANSWER", message="安全策略回答", data={"answer": REFUSAL_ANSWER, "new_tool_calls": 0}))
+            return
         try:
             async for item in agent.stream(request.query, user_id, request.thread_id, request.datasource_id):
                 yield encode_sse(item)
@@ -193,13 +228,35 @@ async def conversation_chat_stream(
 ):
     repository = history_repository()
     require_conversation(repository, conversation_id, user_id)
-    recent_contexts = repository.recent_analysis_contexts(conversation_id, user_id)
+    security = await security_policy.resolve_async(request.query)
+    if security.action != "ALLOW":
+        try:
+            task_id = repository.start_task(conversation_id, request.thread_id)
+        except ActiveTaskConflict as exc:
+            raise HTTPException(status_code=409, detail="conversation already has an active task") from exc
+        repository.add_message(conversation_id, "user", request.query, task_id)
+        repository.update_task(task_id, intent={"interaction_type": "SECURITY_REFUSAL", "requires_scientific_execution": False})
+        repository.add_event(task_id, "SECURITY_DECISION", {
+            **security.model_dump(), "message": "请求未获执行许可", "task_id": task_id, "new_tool_calls": 0,
+        })
+        repository.finish_task_with_answer(task_id, conversation_id, REFUSAL_ANSWER, {
+            "message": "安全策略回答", "answer": REFUSAL_ANSWER, "task_id": task_id, "new_tool_calls": 0,
+            "completion_status": "REFUSED", "quality_status": "REFUSED", "requires_scientific_execution": False,
+        })
+        return StreamingResponse(replay_task_events(repository, conversation_id, task_id), media_type="text/event-stream")
+    stateless_messages = None
+    if VARIANT == "STATELESS_FOLLOWUP":
+        stateless_messages = [{"role": item["role"], "content": item["content"][:3500]}
+                              for item in repository.messages(conversation_id, user_id)[-6:]]
+        recent_contexts = []
+    else:
+        recent_contexts = repository.recent_analysis_contexts(conversation_id, user_id)
     latest_context = recent_contexts[0] if recent_contexts else None
     active_task = repository.active_task(conversation_id)
     resource_summary = resources.discover(user_id, request.thread_id)
     interaction = await conversation_policy.resolve_async(
         request.query,
-        has_context=bool(recent_contexts),
+        has_context=bool(recent_contexts or stateless_messages),
         active_task=active_task is not None,
         resources=resource_summary,
     )
@@ -239,9 +296,10 @@ async def conversation_chat_stream(
             "interaction_reason": interaction.reason,
             "requires_scientific_execution": False,
         })
-        answer = interaction.direct_answer or "请把问题或希望执行的科研任务描述得更具体一些。"
+        answer = conversation_policy.answer_for(interaction, resource_summary)
 
         async def direct_worker():
+            repository.add_event(task_id, "SECURITY_DECISION", {**security.model_dump(), "message": "执行边界检查通过", "task_id": task_id})
             repository.add_event(task_id, "INTERACTION_RESOLVED", {
                 "message": "已判断本轮无需执行科研工具",
                 "task_id": task_id,
@@ -277,12 +335,26 @@ async def conversation_chat_stream(
         (item for item in recent_contexts if item["task"]["id"] == follow_up.target_task_id),
         None,
     )
-    refinement_patch = parse_refinement_patch(request.query) if follow_up.follow_up_type == "REFINE_PREVIOUS_TASK" else None
-    format_only = bool(refinement_patch and refinement_patch.changed_fields == ["output_format"] and previous_context)
-    provenance = build_provenance(previous_context) if follow_up.follow_up_type in REUSE_TYPES or format_only else None
+    refinement_patch = follow_up.refinement_patch
+    sufficiency = StateSufficiencyResolver().resolve(follow_up, previous_context)
+    follow_up.requires_execution = sufficiency.requires_execution
+    provenance = build_provenance(previous_context)
     agent_query, workflow_dataset_version = workflow_query(
-        request.query, follow_up.follow_up_type, previous_context
+        request.query, follow_up.follow_up_type, previous_context, refinement_patch or TaskRefinementPatch()
     )
+    workflow_datasource = request.datasource_id
+    if previous_context and follow_up.follow_up_type in {"REFINE_PREVIOUS_TASK", "RERUN_PREVIOUS_TASK"}:
+        workflow_datasource = request.datasource_id or (refinement_patch.datasource_id if refinement_patch else None) or (previous_context["task"].get("intent_json") or {}).get("datasource_id")
+        previous_thread = previous_context["task"]["thread_id"]
+        for filename in set(re.findall(r"[\w.-]+\.(?:csv|xlsx|xls)", agent_query, re.I)):
+            target = workspace.safe_file(user_id, request.thread_id, filename, create_workspace=True)
+            if target.exists():
+                continue
+            source = workspace.safe_file(user_id, previous_thread, filename)
+            if not source.exists():
+                source = storage.materialize(user_id, previous_thread, filename)
+            if source is not None and source.exists():
+                shutil.copy2(source, target)
     repository.set_first_query_title(conversation_id, request.query)
     try:
         task_id = repository.start_task(conversation_id, request.thread_id)
@@ -297,7 +369,9 @@ async def conversation_chat_stream(
             "classification_source": follow_up.source,
             "clarification_question": follow_up.clarification_question,
             "refinement_patch": refinement_patch.model_dump(exclude_none=True) if refinement_patch else None,
-            "datasource_id": request.datasource_id,
+            "datasource_id": workflow_datasource,
+            "follow_up_decision": follow_up.model_dump(mode="json"),
+            "requires_scientific_execution": sufficiency.requires_execution,
         },
     )
 
@@ -307,6 +381,11 @@ async def conversation_chat_stream(
             if repository.is_cancelled(task_id):
                 yield encode_sse(SSEEvent(event="CANCELLED", message="用户已取消任务", data={"task_id": task_id}))
                 return
+            repository.add_event(task_id, "SECURITY_DECISION", {**security.model_dump(), "message": "执行边界检查通过", "task_id": task_id})
+            repository.add_event(task_id, "INTERACTION_RESOLVED", {
+                "interaction_type": interaction.interaction_type, "reason": interaction.reason,
+                "message": "已判断交互类型", "task_id": task_id,
+            })
             trace_data = {
                 "follow_up_type": follow_up.follow_up_type,
                 "previous_task_id": follow_up.target_task_id,
@@ -314,14 +393,19 @@ async def conversation_chat_stream(
                 "provenance_source": "postgres" if provenance and previous_context else "none",
                 "classification_source": follow_up.source,
                 "classification_reason": follow_up.reason,
-                "new_tool_calls": 0 if follow_up.follow_up_type in REUSE_TYPES or format_only or follow_up.clarification_question else None,
+                "interaction_type": follow_up.interaction_type,
+                "requested_content": follow_up.requested_content,
+                "requires_execution": sufficiency.requires_execution,
+                "state_sufficiency": sufficiency.model_dump(),
+                "llm_telemetry": follow_up.llm_telemetry,
+                "new_tool_calls": 0 if not sufficiency.requires_execution else None,
                 "task_id": task_id,
             }
             repository.add_event(task_id, "FOLLOW_UP_TYPE", {"message": "已解析会话上下文", **trace_data})
             yield encode_sse(SSEEvent(event="FOLLOW_UP_TYPE", message="已解析会话上下文", data=trace_data))
 
-            if follow_up.clarification_question:
-                answer = follow_up.clarification_question
+            if sufficiency.action == "CLARIFY":
+                answer = follow_up.clarification_question or "请明确你指的是哪一次任务或哪个数据版本。"
                 final_data = {"answer": answer, "task_id": task_id, "new_tool_calls": 0}
                 if not repository.finish_task_with_answer(
                     task_id, conversation_id, answer, {"message": "需要澄清历史任务", **final_data}
@@ -331,7 +415,7 @@ async def conversation_chat_stream(
                 yield encode_sse(SSEEvent(event="FINAL_ANSWER", message="需要澄清历史任务", data=final_data))
                 return
 
-            if follow_up.follow_up_type in REUSE_TYPES or format_only:
+            if not sufficiency.requires_execution:
                 provenance_data = provenance.model_dump(mode="json")
                 loaded_data = {
                     "previous_task_id": provenance.previous_task_id,
@@ -343,12 +427,21 @@ async def conversation_chat_stream(
                 }
                 repository.add_event(task_id, "PROVENANCE_LOADED", {"message": "已加载持久化证据", **loaded_data})
                 yield encode_sse(SSEEvent(event="PROVENANCE_LOADED", message="已加载持久化证据", data=loaded_data))
-                answer = (
-                    render_persisted_table(provenance) or provenance_answer(provenance)
-                    if format_only else provenance_answer(provenance)
+                decision_data = {"task_id": task_id, "new_tool_calls": 0,
+                    "decision": {"action": "ANSWER", "answer_basis": "PERSISTED_STATE",
+                                 "reason_summary": "持久化状态已满足本轮信息需求，不启动执行工作流。"},
+                    "decision_source": "state_sufficiency_resolver", "previous_task_id": provenance.previous_task_id}
+                repository.add_event(task_id, "AGENT_DECISION", {"message": "复用已有状态回答", **decision_data})
+                yield encode_sse(SSEEvent(event="AGENT_DECISION", message="复用已有状态回答", data=decision_data))
+                response, response_telemetry = await grounded_responses.followup(
+                    request.query, follow_up, provenance, sufficiency,
                 )
+                answer = response.answer
                 final_data = {
                     "answer": answer,
+                    "llm_telemetry": response_telemetry,
+                    "state": {"claims": [claim.model_dump() for claim in response.claims],
+                              "quality_status": "INSUFFICIENT_EVIDENCE" if sufficiency.missing_content else "PERSISTED_STATE_REUSE"},
                     "previous_task_id": provenance.previous_task_id,
                     "loaded_evidence_count": len(provenance.evidence),
                     "provenance_source": "postgres" if previous_context else "none",
@@ -367,7 +460,15 @@ async def conversation_chat_stream(
                 agent_query,
                 user_id,
                 request.thread_id,
-                request.datasource_id,
+                workflow_datasource,
+                conversation_context={"chat_messages": stateless_messages} if stateless_messages is not None else {
+                    "summary": conversation_context_summary(request.query, recent_contexts).model_dump(mode="json"),
+                    "follow_up_decision": follow_up.model_dump(mode="json"),
+                    "previous_provenance": provenance.model_dump(mode="json"),
+                    "previous_query_scope": ((previous_context or {}).get("task", {}).get("intent_json") or {}).get("query_scope", {}),
+                    "state_sufficiency": sufficiency.model_dump(mode="json"),
+                    "current_user_query": request.query,
+                },
                 **(
                     {"dataset_version": workflow_dataset_version}
                     if follow_up.follow_up_type in {"REFINE_PREVIOUS_TASK", "RERUN_PREVIOUS_TASK"}
@@ -387,7 +488,9 @@ async def conversation_chat_stream(
                         "follow_up_type": follow_up.follow_up_type,
                         "previous_task_id": previous_context["task"]["id"] if previous_context else None,
                         "classification_source": follow_up.source,
-                        "datasource_id": request.datasource_id,
+                        "datasource_id": workflow_datasource,
+                        "follow_up_decision": follow_up.model_dump(mode="json"),
+                        "requires_scientific_execution": True,
                     }
                     repository.update_task(
                         task_id,
@@ -427,8 +530,10 @@ async def conversation_chat_stream(
                 yield encode_sse(SSEEvent(event="CANCELLED", message="用户已取消任务", data={"task_id": task_id}))
                 return
             repository.update_task(task_id, status="failed")
-            repository.add_message(conversation_id, "error", str(exc), task_id)
-            error = SSEEvent(event="ERROR", message="任务执行失败", data={"error": str(exc), "task_id": task_id})
+            failure = execution_failure(exc, "conversation_execution", task_id=task_id,
+                                        conversation_id=conversation_id, thread_id=request.thread_id)
+            repository.add_message(conversation_id, "error", failure["reason_summary"], task_id)
+            error = SSEEvent(event="ERROR", message="任务执行失败", data=failure)
             repository.add_event(task_id, error.event, {"message": error.message, **error.data})
             yield encode_sse(error)
 
@@ -564,11 +669,7 @@ async def resume_agent(request: ResumeRequest, user_id: str = Depends(current_us
 
     async def generate():
         try:
-            source = (
-                agent.stream(resume_query, user_id, request.thread_id, resume_datasource_id)
-                if resume_mode == "file_wait" and resume_query
-                else agent.resume(request.thread_id, request.answer, user_id)
-            )
+            source = agent.resume(request.thread_id, request.answer, user_id)
             if resume_mode == "file_wait":
                 agent.pending.pop(request.thread_id, None)
             async for item in source:
@@ -605,13 +706,16 @@ async def resume_agent(request: ResumeRequest, user_id: str = Depends(current_us
                         repository.update_task(request.task_id, status="failed")
                 yield encode_sse(SSEEvent(event=item.event, message=item.message, data={**item.data, "task_id": request.task_id} if request.task_id else item.data))
         except Exception as exc:
+            failure = execution_failure(exc, "resume_execution", task_id=request.task_id,
+                                        conversation_id=request.conversation_id, thread_id=request.thread_id)
             if repository is not None:
                 if repository.is_cancelled(request.task_id):
                     yield encode_sse(SSEEvent(event="CANCELLED", message="用户已取消任务", data={"task_id": request.task_id}))
                     return
                 repository.update_task(request.task_id, status="failed")
-                repository.add_message(request.conversation_id, "error", str(exc), request.task_id)
-            yield encode_sse(SSEEvent(event="ERROR", message="恢复任务失败", data={"error": str(exc), "task_id": request.task_id}))
+                repository.add_message(request.conversation_id, "error", failure["reason_summary"], request.task_id)
+                repository.add_event(request.task_id, "ERROR", {"message": "恢复任务失败", **failure})
+            yield encode_sse(SSEEvent(event="ERROR", message="恢复任务失败", data=failure))
     if repository is not None:
         # Capture the cursor before the resumed worker can persist new events;
         # otherwise a fast worker could finish before latest_event_id() is read

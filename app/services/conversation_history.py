@@ -241,10 +241,22 @@ class ConversationRepository:
             if item.get("task_id"):
                 messages_by_task.setdefault(item["task_id"], []).append(item)
         contexts: list[dict[str, Any]] = []
-        for task in reversed(detail["tasks"]):
+        eligible = [task for task in detail["tasks"] if task["status"] in {"completed", "failed", "waiting_for_user"}
+                    and (task.get("intent_json") or {}).get("requires_scientific_execution") is not False
+                    and (task.get("intent_json") or {}).get("follow_up_type") not in
+                    {"EVIDENCE_EXPLANATION", "RESULT_EXPLANATION", "ERROR_QUESTION"}
+                    and (task.get("intent_json") or {}).get("interaction_type") not in
+                    {"GREETING", "IDENTITY_QUESTION", "CAPABILITY_QUESTION", "SECURITY_REFUSAL", "CLARIFY"}
+                    and not ((task.get("intent_json") or {}).get("task_type") == "general"
+                             and not evidence_by_task.get(task["id"])
+                             and not any(event["event_type"] == "TOOL_FINISHED" for event in events_by_task.get(task["id"], [])))]
+        first_id = eligible[0]["id"] if eligible else None
+        for task in reversed(eligible):
             if task["status"] not in {"completed", "failed", "waiting_for_user"}:
                 continue
             follow_up_type = (task.get("intent_json") or {}).get("follow_up_type")
+            if (task.get("intent_json") or {}).get("requires_scientific_execution") is False:
+                continue
             if follow_up_type in {"EVIDENCE_EXPLANATION", "RESULT_EXPLANATION", "ERROR_QUESTION"}:
                 continue
             task_events = events_by_task.get(task["id"], [])
@@ -260,6 +272,7 @@ class ConversationRepository:
                 "claims": claims_by_task.get(task["id"], []),
                 "messages": messages_by_task.get(task["id"], []),
                 "assistant_message": assistant,
+                "is_first_substantive": task["id"] == first_id,
             })
             if len(contexts) >= limit:
                 break

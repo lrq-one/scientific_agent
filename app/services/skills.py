@@ -114,21 +114,24 @@ class SkillService:
         """
 
         catalog = self.load()
+        if task_type == "file_analysis" and re.search(r"多少行|几行|行数|列名|哪些列|row count|how many rows", goal, flags=re.I):
+            return [], "direct_file_inspection", {"llm_called": False, "fallback": False}
         available = available_capabilities or set()
         candidates = []
         for skill in catalog:
             if skill.get("name") == "scientific_result_summary":
                 continue
             required = {str(item) for item in skill.get("required_capabilities", [])}
-            if required and available and not required.issubset(available):
+            if available_capabilities is not None and not required.issubset(available):
                 continue
             candidates.append(skill)
+        allowed = {item["name"] for item in candidates}
         if not candidates:
-            candidates = catalog
+            return [], "no_authorized_skill", {"llm_called": False}
 
         llm = self._configured_llm()
         if llm is None:
-            selected = self.select(goal, task_type)
+            selected = [name for name in self.select(goal, task_type) if name in allowed]
             return selected, "deterministic_fallback", {"llm_called": False, "fallback": True}
 
         settings = llm_settings()
@@ -137,6 +140,7 @@ class SkillService:
             "Select the smallest set of reusable scientific workflow skills that together cover the task. "
             "Skills are workflow-level capabilities, not individual tools. Select at most 3. "
             "Use only names from the supplied catalog; do not invent names.\n"
+            "For questions ABOUT system capabilities, greetings, or general conceptual explanations, return an empty selected_skills list: no scientific method is being executed.\n"
             f"Task type: {task_type}\n"
             f"Goal: {goal}\n"
             f"Available capabilities: {sorted(available)}\n"
@@ -160,12 +164,13 @@ class SkillService:
                 "model_configured": settings.model,
                 **collector.snapshot(),
             }
-            if selected:
-                return selected[:3], "llm_compact_catalog", telemetry
+            # An empty semantic selection is valid (e.g. conversation or direct
+            # inspection); do not replace it with a keyword-selected Skill.
+            return selected[:3], "llm_compact_catalog", telemetry
         except Exception:
             pass
 
-        selected = self.select(goal, task_type)
+        selected = [name for name in self.select(goal, task_type) if name in allowed]
         return selected, "deterministic_fallback", {
             "llm_called": True,
             "fallback": True,

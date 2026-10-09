@@ -30,6 +30,9 @@ const retryableFailedQuery = computed(() => {
   )?.content || ''
 })
 const query = ref('')
+const conversationDialog = ref(null)
+const dialogInput = ref(null)
+const dialogState = reactive({ mode: '', item: null, title: '', busy: false, saved: false, error: '' })
 const datasourceId = ref('')
 const conversationLoading = ref(false)
 const resources = ref({ available_files: [], authorized_datasources: [], available_scientific_models: [] })
@@ -66,12 +69,14 @@ const labels = {
   PLAN_STEP_FINISHED: '计划步骤完成', TOOL_FINISHED: '工具执行完成',
   EVIDENCE_ADDED: '已获得新的科研证据', ARTIFACT_CREATED: '已生成结果产物',
   WAITING_FOR_USER: '等待用户补充信息', PLAN_REVISED: '已根据观察调整计划',
-  RECOVERY_DECISION: '已判断恢复策略', INTERACTION_RESOLVED: '已理解本轮交互',
+  AGENT_DECISION: 'Agent 下一步决策', PLAN_UPDATED: '已重规划',
+  OBSERVATION_RECORDED: '观察已写回状态', HITL_RESUMED: '已恢复原任务',
+  RECOVERY_DECISION: '已判断恢复策略', INTERACTION_RESOLVED: '已理解本轮交互', SECURITY_DECISION: '已检查执行权限',
   CANCELLED: '已取消任务', FINAL_ANSWER: '分析完成', ERROR: '执行出错',
 }
 
 function emptyTrace() {
-  return { interaction: null, intent: null, followup: null, skills: [], plan: [], tools: [], candidates: [], evidence: [], claims: [], sql: null, artifacts: [], waiting: '' }
+  return { security: null, interaction: null, intent: null, followup: null, decisions: [], skills: [], plan: [], tools: [], candidates: [], evidence: [], claims: [], sql: null, artifacts: [], waiting: '' }
 }
 
 const resourceCount = computed(() => resources.value.available_files.length + resources.value.authorized_datasources.length + resources.value.available_scientific_models.length)
@@ -138,8 +143,11 @@ function applyPersistedTrace(task, detail) {
   for (const row of eventsForTask(task.id, detail)) {
     const data = row.payload_json || {}
     if (row.event_type === 'INTERACTION_RESOLVED') fresh.interaction = data
+    if (row.event_type === 'SECURITY_DECISION') fresh.security = data
     if (row.event_type === 'FOLLOW_UP_TYPE') fresh.followup = data
     if (row.event_type === 'PLAN_CREATED') fresh.plan = data.plan || []
+    if (row.event_type === 'PLAN_UPDATED') fresh.plan = data.plan || []
+    if (row.event_type === 'AGENT_DECISION') fresh.decisions.push(data.decision)
     if (row.event_type === 'PLAN_REVISED') fresh.plan = data.revised_plan || fresh.plan
     if (row.event_type === 'TOOL_CANDIDATES') fresh.candidates = data.candidate_tools || []
     if (row.event_type === 'TOOL_STARTED') fresh.tools.push({ tool: data.tool, status: 'running' })
@@ -149,6 +157,12 @@ function applyPersistedTrace(task, detail) {
       if (tool) tool.status = data.result?.success === false ? 'failed' : 'completed'
     }
     if (row.event_type === 'WAITING_FOR_USER') fresh.waiting = data.question || ''
+    if (['HITL_RESUMED', 'FINAL_ANSWER', 'ERROR', 'CANCELLED'].includes(row.event_type)) fresh.waiting = ''
+    if (row.event_type === 'FINAL_ANSWER' && data.state) {
+      fresh.plan = data.state.plan || fresh.plan
+      fresh.intent = { ...fresh.intent, task_type: data.state.task_type || fresh.intent?.task_type }
+      if (fresh.followup) fresh.followup.new_tool_calls = data.state.tool_call_count ?? data.new_tool_calls ?? fresh.followup.new_tool_calls
+    }
   }
   fresh.evidence = (detail.evidence || []).filter(item => item.task_id === task.id)
   fresh.claims = (detail.claims || []).filter(item => item.task_id === task.id)
@@ -204,19 +218,47 @@ async function newTask() {
 }
 
 async function renameItem(item) {
-  const title = window.prompt('输入新的对话标题', item.title)
-  if (!title?.trim()) return
-  await renameConversation(item.id, title.trim())
-  await refreshConversations()
+  await openConversationDialog('rename', item)
 }
 
 async function removeItem(item) {
-  if (!window.confirm(`确认删除“${item.title}”？`)) return
-  await deleteConversation(item.id)
-  await refreshConversations()
-  if (item.id === conversationId.value) {
-    if (conversations.value.length) await loadConversation(conversations.value[0].id)
-    else await newTask()
+  await openConversationDialog('delete', item)
+}
+
+async function openConversationDialog(mode, item) {
+  Object.assign(dialogState, { mode, item: { id: item.id, title: item.title }, title: item.title, busy: false, saved: false, error: '' })
+  await nextTick()
+  conversationDialog.value.showModal()
+  if (mode === 'rename') { dialogInput.value.focus(); dialogInput.value.select() }
+}
+
+function closeConversationDialog(event) {
+  if (dialogState.busy) { event?.preventDefault(); return }
+  conversationDialog.value.close()
+  dialogState.mode = ''
+}
+
+async function submitConversationDialog() {
+  if (dialogState.busy || !dialogState.item || (dialogState.mode === 'rename' && !dialogState.title.trim())) return
+  dialogState.busy = true; dialogState.error = ''
+  const { id } = dialogState.item
+  try {
+    if (!dialogState.saved) {
+      if (dialogState.mode === 'rename') await renameConversation(id, dialogState.title.trim())
+      else await deleteConversation(id)
+      dialogState.saved = true
+    }
+    await refreshConversations()
+    if (dialogState.mode === 'delete' && id === conversationId.value) {
+      if (conversations.value.length) await loadConversation(conversations.value[0].id)
+      else await newTask()
+    }
+    dialogState.busy = false
+    closeConversationDialog()
+  } catch (error) {
+    dialogState.error = (dialogState.saved ? '操作已完成，但刷新失败，请重试刷新：' : '操作失败：') + error.message
+  } finally {
+    dialogState.busy = false
   }
 }
 
@@ -226,9 +268,12 @@ function receive(sourceConversationId, type, data) {
   if (sourceConversationId !== conversationId.value || conversationLoading.value) return
   events.value.push({ type, text: labels[type] || type, detail: data.message, time: new Date().toLocaleTimeString() })
   if (type === 'INTERACTION_RESOLVED') trace.value.interaction = data
+  if (type === 'SECURITY_DECISION') trace.value.security = data
   if (type === 'INTENT_RESOLVED') { trace.value.intent = data.intent; trace.value.skills = data.selected_skills || [] }
   if (type === 'FOLLOW_UP_TYPE') trace.value.followup = data
   if (type === 'PLAN_CREATED') trace.value.plan = data.plan || []
+  if (type === 'PLAN_UPDATED') trace.value.plan = data.plan || []
+  if (type === 'AGENT_DECISION') trace.value.decisions.push(data.decision)
   if (type === 'PLAN_REVISED') trace.value.plan = data.revised_plan || []
   if (type === 'TOOL_CANDIDATES') trace.value.candidates = data.candidate_tools || []
   if (type === 'PLAN_STEP_STARTED' || type === 'PLAN_STEP_FINISHED') {
@@ -242,7 +287,13 @@ function receive(sourceConversationId, type, data) {
     else trace.value.tools.push({ tool: data.tool, status: 'completed' })
   }
   if (type === 'EVIDENCE_ADDED') trace.value.evidence.push(data.evidence)
-  if (type === 'FINAL_ANSWER') trace.value.claims = data.state?.claims || []
+  if (type === 'FINAL_ANSWER') {
+    trace.value.claims = data.state?.claims || []
+    trace.value.plan = data.state?.plan || trace.value.plan
+    if (data.state?.task_type) trace.value.intent = { ...trace.value.intent, task_type: data.state.task_type }
+    if (trace.value.followup) trace.value.followup.new_tool_calls = data.state?.tool_call_count ?? data.new_tool_calls ?? trace.value.followup.new_tool_calls
+  }
+  if (type === 'HITL_RESUMED') trace.value.waiting = ''
   if (type === 'ARTIFACT_CREATED') trace.value.artifacts.push(data.artifact)
   if (type === 'FINAL_ANSWER') messages.value.push({ role: 'assistant', content: data.answer, task_id: data.task_id })
   if (type === 'WAITING_FOR_USER') { pendingQuestion.value = data.question; trace.value.waiting = data.question; pendingTaskId.value = data.task_id || '' }
@@ -257,13 +308,13 @@ function receive(sourceConversationId, type, data) {
 async function primaryAction() {
   if (busy.value) return cancelRunning()
   if (!query.value.trim() && currentStatus.value === 'failed' && retryableFailedQuery.value) {
-    query.value = retryableFailedQuery.value
+    query.value = '重新回答'
   }
   return send()
 }
 
 async function send() {
-  const text = query.value.trim()
+  const text = query.value.trim() || (currentStatus.value === 'failed' ? '重新回答' : '')
   if (!text || busy.value || !conversationId.value) return
   const sourceConversationId = conversationId.value
   const activeThread = threadId.value
@@ -408,7 +459,7 @@ onUnmounted(() => {
       <div class="side-section conversation-list">
         <template v-for="(items, group) in groupedConversations" :key="group">
           <label v-if="items.length">{{ group }}</label>
-          <div v-for="item in items" :key="item.id" :class="['history', { active: item.id === conversationId }]" @click="loadConversation(item.id)">
+          <div v-for="item in items" :key="item.id" :data-conversation-id="item.id" :class="['history', { active: item.id === conversationId }]" @click="loadConversation(item.id)">
             <span :class="['history-icon', `status-${sidebarStatus(item)}`]">{{ sidebarStatus(item) === 'completed' ? '✓' : sidebarStatus(item) === 'failed' ? '!' : '◷' }}</span><div class="history-copy"><b>{{ item.title }}</b><small>{{ statusLabels[sidebarStatus(item)] }} · {{ item.message_count }} 条消息</small></div>
             <button title="重命名" @click.stop="renameItem(item)">✎</button><button title="删除" @click.stop="removeItem(item)">×</button>
           </div>
@@ -431,7 +482,7 @@ onUnmounted(() => {
           <div v-else-if="!messages.length" class="welcome"><div class="hero-orbit"><span>∿</span></div><h2>从一个科研问题开始</h2><p>无需选择问答模式。描述目标，系统会自动判断所需资源与分析路径。</p><div class="examples"><button v-for="(item, index) in examples" :key="item" @click="query = item"><span>0{{ index + 1 }}</span>{{ item }}</button></div></div>
           <div v-else class="messages">
             <div class="conversation-message-list">
-              <article v-for="message in messages" :key="message.id || `${message.role}-${message.created_at}-${message.content}`" :class="['message-row', message.role]">
+              <article v-for="message in messages" :key="message.id || `${message.role}-${message.created_at}-${message.content}`" :data-task-id="message.task_id || ''" :class="['message-row', message.role]">
                 <span class="avatar">{{ message.role === 'user' ? '你' : 'S' }}</span><div :class="message.role === 'user' ? 'user-bubble' : 'assistant-body'"><div v-if="message.role === 'assistant'" class="markdown" v-html="marked.parse(message.content)"></div><div v-else>{{ message.content }}</div><button v-if="message.role === 'assistant' && message.task_id" class="show-trace" @click="showTask(message.task_id)">查看执行过程</button></div>
               </article>
             </div>
@@ -446,16 +497,18 @@ onUnmounted(() => {
             <div v-if="conversationLoading" class="trace-loading"><i></i><i></i><i></i></div>
             <template v-else>
             <div v-if="trace.interaction" class="trace-block"><label>Interaction</label><p><b>{{ trace.interaction.interaction_type }}</b></p><small>{{ trace.interaction.reason || trace.interaction.source || 'no tool execution' }}</small></div>
+            <div v-if="trace.security" class="trace-block"><label>Security Decision</label><p><b>{{ trace.security.action }}</b> · {{ trace.security.risk_type }}</p><small>{{ trace.security.reason }}</small></div>
             <div v-if="trace.followup" class="trace-block"><label>Follow-up</label><p><b>{{ trace.followup.follow_up_type }}</b></p><small>previous task: {{ trace.followup.previous_task_id || 'none' }} · loaded evidence: {{ trace.followup.loaded_evidence_count }} · new tool calls: {{ trace.followup.new_tool_calls ?? 'pending' }}</small></div>
             <div v-if="trace.intent" class="trace-block"><label>Intent</label><p><b>{{ trace.intent.task_type }}</b> · {{ trace.intent.complexity }}</p><small>{{ trace.intent.domain }} · {{ trace.intent.required_capabilities?.join(' / ') }}</small></div>
             <div v-if="trace.skills.length" class="trace-block"><label>Selected Skills</label><span v-for="skill in trace.skills" :key="skill" class="trace-chip">{{ skill }}</span></div>
+            <div v-if="trace.decisions.length" class="trace-block"><label>Agent Decisions</label><p v-for="(decision, i) in trace.decisions" :key="i" class="trace-evidence"><b>{{ decision.action }}<template v-if="decision.tool_name"> · {{ decision.tool_name }}</template></b><small>{{ decision.reason_summary }}</small></p></div>
             <div v-if="trace.candidates.length" class="trace-block"><label>Candidate Tools</label><span v-for="tool in trace.candidates" :key="tool" class="trace-chip">{{ tool }}</span></div>
             <div v-if="trace.plan.length" class="trace-block"><button class="fold" @click="folds.plan = !folds.plan">Plan <i>{{ folds.plan ? '−' : '+' }}</i></button><template v-if="folds.plan"><p v-for="step in trace.plan" :key="step.step_id" class="trace-row"><i :class="step.status"></i><span>{{ step.step_id }}<small>{{ step.goal }}</small></span></p></template></div>
             <div v-if="trace.tools.length" class="trace-block"><label>Tool Calls</label><p v-for="(tool, i) in trace.tools" :key="`${tool.tool}-${i}`" class="trace-row"><i :class="tool.status"></i><span>{{ tool.tool }}</span><small>{{ tool.status }}</small></p></div>
             <div v-if="trace.evidence.length" class="trace-block"><button class="fold" @click="folds.evidence = !folds.evidence">Evidence <i>{{ folds.evidence ? '−' : '+' }}</i></button><template v-if="folds.evidence"><p v-for="item in trace.evidence" :key="item.id || item.evidence_id" class="trace-evidence"><b>{{ item.claim }}</b><small>{{ item.source }}</small></p></template></div>
             <div v-if="trace.claims.length" class="trace-block"><label>Claims → Evidence</label><p v-for="(claim, i) in trace.claims" :key="claim.id || i" class="trace-evidence"><b>{{ claim.claim_text || claim.text }}</b><small>{{ claim.status }} · {{ (claim.evidence_ids_json || claim.evidence_ids || []).join(', ') || 'unsupported' }}</small></p></div>
             <div v-if="trace.sql" class="trace-block"><label>SQL Source</label><pre class="trace-evidence">{{ trace.sql.sql }}</pre><small>Params: {{ JSON.stringify(trace.sql.params || {}) }}</small></div>
-            <div v-if="trace.artifacts.length" class="trace-block"><button class="fold" @click="folds.artifacts = !folds.artifacts">Artifacts <i>{{ folds.artifacts ? '−' : '+' }}</i></button><template v-if="folds.artifacts"><button v-for="item in trace.artifacts" :key="item.artifact_id" class="artifact" @click="downloadArtifact(item.artifact_id, item.filename)">↓ {{ item.filename }}</button></template></div>
+            <div v-if="trace.artifacts.length" class="trace-block"><button class="fold" @click="folds.artifacts = !folds.artifacts">Artifacts <i>{{ folds.artifacts ? '−' : '+' }}</i></button><template v-if="folds.artifacts"><button v-for="item in trace.artifacts" :key="item.artifact_id || item.id" class="artifact" @click="downloadArtifact(item.artifact_id || item.id, item.filename)">↓ {{ item.filename }}</button></template></div>
             <div v-if="trace.waiting" class="trace-wait"><b>HITL</b><p>{{ trace.waiting }}</p></div>
             </template>
           </div></section>
@@ -463,5 +516,14 @@ onUnmounted(() => {
         </aside>
       </div>
     </main>
+    <dialog ref="conversationDialog" class="conversation-dialog" aria-labelledby="conversation-dialog-title" @cancel="closeConversationDialog">
+      <form @submit.prevent="submitConversationDialog">
+        <h2 id="conversation-dialog-title">{{ dialogState.mode === 'rename' ? '重命名会话' : '删除会话' }}</h2>
+        <template v-if="dialogState.mode === 'rename'"><label for="conversation-title">会话名称</label><input id="conversation-title" ref="dialogInput" v-model="dialogState.title" maxlength="200" :disabled="dialogState.busy || dialogState.saved" autocomplete="off"></template>
+        <p v-else>确认删除“{{ dialogState.item?.title }}”？该会话的历史记录将被删除，此操作不可撤销。</p>
+        <p v-if="dialogState.error" class="dialog-error" role="alert">{{ dialogState.error }}</p>
+        <div class="dialog-actions"><button type="button" :disabled="dialogState.busy" autofocus @click="closeConversationDialog">取消</button><button type="submit" :class="{ danger: dialogState.mode === 'delete' }" :disabled="dialogState.busy || (dialogState.mode === 'rename' && !dialogState.title.trim())">{{ dialogState.busy ? '处理中…' : dialogState.saved ? '重试刷新' : dialogState.mode === 'rename' ? '保存名称' : '确认删除' }}</button></div>
+      </form>
+    </dialog>
   </div>
 </template>

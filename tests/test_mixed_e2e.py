@@ -23,7 +23,7 @@ def postgres_available() -> bool:
 @pytest.mark.skipif(not postgres_available(), reason="PostgreSQL integration service is unavailable")
 async def test_mixed_trace_uses_deepagents_mcp_text2sql_and_postgres(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", POSTGRES_URL)
-    query = "比较 model_v1.csv 和 model_v2.csv，分析为什么新模型在 fused-ring 分子上误差更高，并检查是不是 training_db 训练数据覆盖不足。"
+    query = "比较 model_v1.csv 和 model_v2.csv，分析为什么新模型在 fused-ring 分子上误差更高，并检查是不是 training_db 训练数据覆盖不足，核对分子 M0001 特征。"
     events = [event async for event in ScientificAgent().stream(query, "e2e", "mixed-postgres", "training_db")]
     intent = next(event for event in events if event.event == "INTENT_RESOLVED")
     assert intent.data["intent"]["task_type"] == "mixed_analysis"
@@ -56,7 +56,7 @@ async def test_mcp_unavailable_uses_file_subgroup_as_limited_alternative(monkeyp
         return {"runtime": "controlled-test-scaffold", "model_mode": "deterministic_scaffold"}
 
     monkeypatch.setattr(agent.deep_runtime, "run_scaffold", scaffold)
-    query = "比较 model_v1.csv 和 model_v2.csv，分析 fused-ring 结构误差，并检查 training_db 训练覆盖。"
+    query = "比较 model_v1.csv 和 model_v2.csv，分析 fused-ring 结构误差，并检查 training_db 训练覆盖，核对分子 M0001 特征。"
     events = [item async for item in agent.stream(query, "mcp-failure", "mcp-failure-thread", "training_db")]
     decision = next(item for item in events if item.event == "RECOVERY_DECISION" and item.data.get("failure_kind") == "tool_unavailable")
     assert decision.data["action"] == "alternative_tool"

@@ -228,7 +228,9 @@ def test_conversation_stream_persists_user_and_assistant_messages():
 def test_persisted_db_hitl_resume_keeps_conversation_task_and_thread_ids(monkeypatch):
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("DATABASE_URL", raising=False)
+    # Exercise the actual configured reader; an unconfigured datasource must
+    # not be advertised or implicitly granted by the authorization policy.
+    monkeypatch.setenv("DATABASE_URL", os.getenv("TEST_POSTGRES_URL", "postgresql://agent_reader:reader_demo@127.0.0.1:55432/scientific_agent"))
     from app.main import app
 
     headers = {"X-User-Id": f"hitl-regression-{os.getpid()}"}

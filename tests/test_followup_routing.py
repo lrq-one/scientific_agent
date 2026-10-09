@@ -8,7 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.agents.scientific_agent import ScientificAgent
-from app.models.schemas import ScientificAgentState, SSEEvent, ToolResult
+from app.models.schemas import ScientificAgentState, SSEEvent, ToolResult, FollowUpDecision, TaskRefinementPatch
+from conftest import StructuredDecisionStub
 from app.services.followup import (
     ConversationContextResolver,
     build_provenance,
@@ -36,6 +37,17 @@ def _context() -> dict:
     }
 
 
+def test_repeated_rerun_keeps_persisted_scientific_goal():
+    goal = "统计 training_db 中 train_v3 不同结构类型覆盖"
+    context = _context()
+    context["task"]["intent_json"]["goal"] = goal
+    context["messages"] = [{"role": "user", "content": "重新回答"}]
+    assert workflow_query("再重跑一次", "RERUN_PREVIOUS_TASK", context) == (goal, "train_v3")
+    refined, version = workflow_query("换成 train_v2", "REFINE_PREVIOUS_TASK", context)
+    assert "不同结构类型" in refined and "train_v2" in refined
+    assert version == "train_v2"
+
+
 @pytest.mark.parametrize(
     ("query", "expected"),
     [
@@ -48,11 +60,16 @@ def _context() -> dict:
         ("刚才的查询为什么报错？", "ERROR_QUESTION"),
     ],
 )
-def test_deterministic_followup_types(query: str, expected: str):
-    result = ConversationContextResolver().deterministic(query, _context())
+@pytest.mark.asyncio
+async def test_structured_followup_contract(query: str, expected: str):
+    semantic_type = {"EVIDENCE_EXPLANATION": "EVIDENCE_QUERY", "REFINE_PREVIOUS_TASK": "TASK_REFINEMENT",
+                     "RERUN_PREVIOUS_TASK": "RERUN"}.get(expected, expected)
+    model = StructuredDecisionStub([FollowUpDecision(interaction_type=semantic_type, requested_content=["evidence"])])
+    result = await ConversationContextResolver(model).resolve_async(query, _context())
     assert result is not None
     assert result.follow_up_type == expected
-    assert result.source == "deterministic"
+    assert result.source == "llm_structured"
+    assert query in model.prompts[0]
 
 
 def test_provenance_reconstructs_persisted_sql_and_evidence():
@@ -200,11 +217,14 @@ def test_cancelled_task_partial_evidence_cannot_be_explained_as_final_conclusion
     assert "已由用户取消" in answer
 
 
-def test_contextual_routing_v2_does_not_confuse_abnormal_structures_or_new_work():
-    resolver = ConversationContextResolver()
-    assert resolver.deterministic("继续分析异常结构的预测误差", _context()).follow_up_type == "CONTINUE_ANALYSIS"
-    assert resolver.deterministic("分析异常结构的预测误差", _context()).follow_up_type == "NEW_TASK"
-    assert resolver.deterministic("统计 train_v2 中的含环分子", _context()).follow_up_type == "NEW_TASK"
+@pytest.mark.asyncio
+async def test_contextual_routing_keeps_semantic_model_decision():
+    resolver = ConversationContextResolver(StructuredDecisionStub([
+        FollowUpDecision(interaction_type="CONTINUE_ANALYSIS"), FollowUpDecision(interaction_type="NEW_TASK"),
+        FollowUpDecision(interaction_type="NEW_TASK")]))
+    assert (await resolver.resolve_async("继续分析异常结构的预测误差", _context())).follow_up_type == "CONTINUE_ANALYSIS"
+    assert (await resolver.resolve_async("分析异常结构的预测误差", _context())).follow_up_type == "NEW_TASK"
+    assert (await resolver.resolve_async("统计 train_v2 中的含环分子", _context())).follow_up_type == "NEW_TASK"
 
 
 @pytest.mark.asyncio
@@ -212,9 +232,14 @@ async def test_multiple_previous_tasks_require_explicit_target_or_clarification(
     first, second = _context(), _context()
     first["task"]["id"] = str(uuid.uuid4())
     second["task"]["id"] = str(uuid.uuid4())
-    resolver = ConversationContextResolver()
+    resolver = ConversationContextResolver(StructuredDecisionStub([
+        FollowUpDecision(interaction_type="CLARIFY", clarification_question="请说明要引用哪一项"),
+        FollowUpDecision(interaction_type="EVIDENCE_QUERY", requested_content=["evidence"]),
+        FollowUpDecision(interaction_type="EVIDENCE_QUERY", target_task_id=second["task"]["id"], target_reference="EXPLICIT",
+                         target_selector_type="ORDER", target_reference_text="上上轮", requested_content=["evidence"]),
+    ]))
     ambiguous = await resolver.resolve_async("之前那个任务的证据呢？", first, [first, second])
-    assert ambiguous.follow_up_type == "EVIDENCE_EXPLANATION"
+    assert ambiguous.interaction_type == "CLARIFY"
     assert ambiguous.clarification_question
     assert ambiguous.target_task_id is None
     explicit = await resolver.resolve_async(f"请展示 task_id {second['task']['id']} 的证据", first, [first, second])
@@ -366,12 +391,20 @@ class FakeAnalysisAgent:
 
 
 @pytest.mark.skipif(not POSTGRES_URL, reason="requires product PostgreSQL schema")
-def test_multiturn_followup_reuses_persisted_evidence_without_tools(monkeypatch):
+def test_multiturn_followup_reuses_persisted_evidence_without_tools(monkeypatch, offline_followup_model):
     from app.api import routes
     from app.main import app
 
     fake = FakeAnalysisAgent()
     monkeypatch.setattr(routes, "agent", fake)
+    offline_followup_model.decisions = [FollowUpDecision(interaction_type="NEW_TASK"),
+        *[FollowUpDecision(interaction_type="EVIDENCE_QUERY", requested_content=["evidence"]) for _ in range(3)],
+        FollowUpDecision(interaction_type="TASK_REFINEMENT", requested_content=["answer"],
+                         refinement_patch=TaskRefinementPatch(dataset_version="train_v2", changed_fields=["dataset_version"])),
+        FollowUpDecision(interaction_type="TASK_REFINEMENT", requested_content=["raw_rows"],
+                         refinement_patch=TaskRefinementPatch(output_format="table", changed_fields=["output_format"])),
+        FollowUpDecision(interaction_type="CLARIFY", clarification_question="请说明要引用哪一项任务"),
+    ]
     headers = {"X-User-Id": f"followup-{uuid.uuid4()}"}
     thread_ids = [f"followup-thread-{uuid.uuid4()}" for _ in range(5)]
     with TestClient(app) as client:
@@ -462,6 +495,8 @@ def test_multiturn_followup_reuses_persisted_evidence_without_tools(monkeypatch)
         for index, task in enumerate(explanation_tasks, start=1):
             task_events = [event for event in detail["events"] if event["task_id"] == task["id"]]
             assert [event["event_type"] for event in task_events] == [
+                "SECURITY_DECISION",
+                "INTERACTION_RESOLVED",
                 "FOLLOW_UP_TYPE",
                 "PROVENANCE_LOADED",
                 "FINAL_ANSWER",
@@ -499,10 +534,11 @@ def test_persisted_claim_links_resolve_to_real_evidence_ids():
 
 
 @pytest.mark.skipif(not POSTGRES_URL, reason="requires product PostgreSQL schema")
-def test_latest_analysis_without_evidence_never_reuses_older_evidence(monkeypatch):
+def test_latest_analysis_without_evidence_never_reuses_older_evidence(monkeypatch, offline_followup_model):
     from app.api import routes
     from app.main import app
     from app.services.conversation_history import ConversationRepository
+    offline_followup_model.decisions = [FollowUpDecision(interaction_type="EVIDENCE_QUERY", requested_content=["evidence"])]
 
     repository = ConversationRepository(POSTGRES_URL)
     user_id = f"stale-evidence-{uuid.uuid4()}"

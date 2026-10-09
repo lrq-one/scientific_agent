@@ -66,14 +66,16 @@ TOOL_SPECS = [
     _spec("plot_metric_comparison", "Render a metric comparison as PNG.", "artifact", ["metrics"], "PNG artifact descriptor", properties={"metrics": {"type": "object"}}, side_effect="creates_object"),
     _spec("list_datasources", "List data sources authorized for the user.", "database", [], "datasource descriptors"),
     _spec("search_schema", "BM25-search table/column metadata.", "database", ["query"], "ranked schema hits"),
-    _spec("get_table_schema", "Get detailed schema for one table.", "database", ["table"], "column descriptors"),
+    _spec("get_table_schema", "Get detailed authorized schema for a physical table; use table='*' to discover all authorized tables when names are unknown. Datasource names/dataset versions are NOT tables; discover metadata yourself, not via user clarification.", "database", ["table"], "column descriptors"),
     _spec("get_table_relationships", "Get foreign-key relationships.", "database", [], "relationship descriptors"),
     _spec("preview_table", "Preview bounded rows from an allowed table.", "database", ["table"], "bounded row records", properties={"limit": {"type": "integer", "minimum": 1, "maximum": 100}}),
     _spec("execute_readonly_sql", "Execute SQL Guard-approved read-only SQL.", "database", ["sql"], "bounded query rows", properties={"params": {"type": "object"}}, risk_level="medium"),
+    _spec("text_to_sql", "Generate SQLCandidate using previously retrieved authorized schema; does not execute SQL.", "database", ["goal"], "SQLCandidate with SQL and params", properties={"repair_feedback": {"type": "string"}}),
+    _spec("query_checker", "Validate read-only SQL and bindings through the existing SQLGuard and query checker.", "database", ["sql"], "validation result", properties={"params": {"type": "object"}}),
     _spec("get_molecule_features", "Retrieve molecular features through Scientific MCP.", "mcp", ["molecule_id"], "feature object"),
     _spec("predict_rt", "Predict retention time with a registered model.", "scientific_model", ["smiles"], "prediction with provenance", risk_level="medium"),
-    _spec("compare_structure_groups", "Compare deterministic error metrics across structure groups.", "file", ["rows", "group"], "group comparison", properties={"rows": {"type": "array", "items": {"type": "object"}, "minItems": 1}}),
-    _spec("save_result_table", "Save result rows as CSV or XLSX.", "artifact", ["rows", "format"], "table artifact descriptor", properties={"rows": {"type": "array", "items": {"type": "object"}}, "format": {"type": "string", "enum": ["csv", "xlsx"]}}, side_effect="creates_object"),
+    _spec("compare_structure_groups", "Compute per-group error metrics from per-sample absolute_error OR observed_rt/predicted_rt rows. Do NOT pass already aggregated MAE tables; reuse those existing metrics directly.", "file", ["rows", "group"], "group comparison", properties={"rows": {"type": "array", "items": {"type": "object", "anyOf": [{"required": ["absolute_error"]}, {"required": ["observed_rt", "predicted_rt"]}], "properties": {"absolute_error": {"type": "number"}, "observed_rt": {"type": "number"}, "predicted_rt": {"type": "number"}}}, "minItems": 1}}),
+    _spec("save_result_table", "Save result rows as CSV or XLSX.", "artifact", ["rows", "format"], "table artifact descriptor", properties={"rows": {"type": "array", "items": {"type": "object"}, "minItems": 1}, "format": {"type": "string", "enum": ["csv", "xlsx"]}, "filename": {"type": "string", "pattern": "^[^/\\\\]+\\.(csv|xlsx)$"}, "required_columns": {"type": "array", "items": {"type": "string"}}}, side_effect="creates_object"),
     _spec("save_chart", "Persist a validated PNG chart in object storage.", "artifact", ["image_base64", "filename"], "chart artifact descriptor", properties={"filename": {"type": "string", "pattern": "^[^/\\\\]+\\.png$"}}, side_effect="creates_object"),
 ]
 
@@ -121,12 +123,16 @@ class ToolRegistry:
         allowed_by_skills: set[str] = set()
         for name in selected_skills:
             allowed_by_skills.update(skill_map.get(name, {}).get("allowed_tools", []))
+        if "execute_readonly_sql" in allowed_by_skills:
+            allowed_by_skills.update({"text_to_sql", "query_checker"})
+        if selected_skills and not allowed_by_skills:
+            return []
         skill_filtered = (
             [spec for spec in permission_filtered if spec.name in allowed_by_skills]
             if allowed_by_skills
             else permission_filtered
         )
-        if current_step_tools:
+        if current_step_tools is not None:
             # The current plan step is a hard execution boundary. Skill routing
             # may narrow the set further, but a weak/mismatched Skill selection
             # must never widen execution back to unrelated tools or make a
@@ -135,7 +141,7 @@ class ToolRegistry:
             preferred = [spec for spec in skill_filtered if spec.name in step_names]
             if preferred:
                 return preferred
-            return [spec for spec in permission_filtered if spec.name in step_names]
+            return []
         return skill_filtered
 
     async def select(

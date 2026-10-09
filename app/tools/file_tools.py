@@ -38,13 +38,17 @@ class FileAnalysisService:
 
     def read_csv(self, path: Path, limit: int = 100) -> ToolResult:
         if path.suffix.lower() != ".csv":
-            return ToolResult(success=False, source=str(path), error="file is not CSV")
-        return ToolResult(success=True, data=pd.read_csv(path).head(limit).to_dict(orient="records"), source=str(path))
+            return ToolResult(success=False, source=str(path), error="file is not CSV", outcome="UNSUPPORTED_OPERATION")
+        frame = pd.read_csv(path)
+        return ToolResult(success=True, data=frame.head(limit).to_dict(orient="records"), source=str(path),
+                          metadata={"total_rows": len(frame), "row_limit": limit, "rows_complete": len(frame) <= limit})
 
     def read_excel(self, path: Path, limit: int = 100) -> ToolResult:
         if path.suffix.lower() not in {".xlsx", ".xls"}:
-            return ToolResult(success=False, source=str(path), error="file is not Excel")
-        return ToolResult(success=True, data=pd.read_excel(path).head(limit).to_dict(orient="records"), source=str(path))
+            return ToolResult(success=False, source=str(path), error="file is not Excel", outcome="UNSUPPORTED_OPERATION")
+        frame = pd.read_excel(path)
+        return ToolResult(success=True, data=frame.head(limit).to_dict(orient="records"), source=str(path),
+                          metadata={"total_rows": len(frame), "row_limit": limit, "rows_complete": len(frame) <= limit})
 
     def profile_dataset(self, path: Path) -> ToolResult:
         frame = self.read_table(path)
@@ -64,7 +68,7 @@ class FileAnalysisService:
 
     def calculate_metrics(self, path: Path) -> ToolResult:
         frame = self.read_table(path)
-        missing = self.REQUIRED - set(frame.columns)
+        missing = {"observed_rt", "predicted_rt"} - set(frame.columns)
         if missing:
             return ToolResult(success=False, source=str(path), error=f"missing columns: {sorted(missing)}")
         errors = (frame["predicted_rt"] - frame["observed_rt"]).abs()
@@ -165,11 +169,14 @@ class FileAnalysisService:
         for column, expected in filters.items():
             if column not in selected:
                 return ToolResult(success=False, source=str(path), error=f"unknown filter column: {column}")
+            if isinstance(expected, (dict, list)):
+                return ToolResult(success=False, source=str(path), outcome="UNSUPPORTED_OPERATION",
+                                  error="filter_samples supports scalar equality only; operator objects are unsupported")
             selected = selected[selected[column] == expected]
         return ToolResult(
             success=True,
             data=selected.head(limit).to_dict(orient="records"),
             source=str(path),
-            metadata={"matched_rows": int(len(selected)), "filters": filters},
+            metadata={"matched_rows": int(len(selected)), "filters": filters, "rows_complete": len(selected) <= limit},
         )
 

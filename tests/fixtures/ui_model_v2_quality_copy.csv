@@ -1,0 +1,9 @@
+molecule_id,smiles,observed_rt,predicted_rt,structure_type,is_cyclic
+M001,CCO,2.0,2.1,linear,False
+M002,C1CCCCC1,5.0,5.3,cyclic,True
+M003,c1ccccc1,6.0,6.2,aromatic,True
+M004,c1ccc2ccccc2c1,8.0,10.2,fused_ring,True
+M005,CC(=O)O,3.0,3.1,linear,False
+M006,C1=CC2=CC=CC=C2C=C1,9.0,not_recorded,fused_ring,True
+M005,CCN,2.5,2.6,linear,False
+M008,C1CCOC1,,4.6,cyclic,True

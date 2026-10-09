@@ -35,8 +35,9 @@ def check_checkpoint(checkpointing) -> dict[str, Any]:
     if not checkpointing.persistent:
         return _component("unavailable", ready=False, detail="configured checkpoint store did not initialize")
     try:
-        connection = checkpointing.connection
-        if connection is not None:
+        # PostgresSaver owns its connection and pipeline/lock lifecycle. A
+        # readiness request must never run SQL on that connection concurrently.
+        with psycopg.connect(os.environ["CHECKPOINT_DATABASE_URL"], connect_timeout=2) as connection:
             row = connection.execute("SELECT 1 AS ok").fetchone()
             if row is None:
                 return _component("unavailable", ready=False, detail="checkpoint database ping returned no row")
@@ -85,7 +86,7 @@ def runtime_readiness(*, storage, checkpointing) -> dict[str, Any]:
         "checkpoint": check_checkpoint(checkpointing),
         "llm": check_llm(),
         "mcp": _component("on_demand", ready=True, transport="stdio"),
-        "deepagents": _component("available", ready=True),
+        "agent_runtime": _component("available", ready=True, engine="langgraph_decision_loop"),
     }
     blocking = ("database", "checkpoint", "llm")
     ready = all(components[name]["ready"] for name in blocking)

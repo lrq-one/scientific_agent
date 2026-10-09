@@ -5,6 +5,7 @@ from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
+from app.tools.sql_guard import SQLGuard, sanitize_result, SENSITIVE_FIELD
 
 
 @dataclass(frozen=True)
@@ -17,7 +18,8 @@ class PostgresDatasource:
 
 
 class PostgresSchemaInspector:
-    def __init__(self, datasource: PostgresDatasource, allowed_tables: set[str] | None = None):
+    def __init__(self, datasource: PostgresDatasource, allowed_tables: set[str] | None = None,
+                 denied_tables: set[str] | None = None, sensitive_columns: set[str] | None = None):
         self.datasource = datasource
         self.allowed_tables = allowed_tables or {
             "datasets",
@@ -35,6 +37,10 @@ class PostgresSchemaInspector:
             # Kept for backwards-compatible Case A/B queries.
             "training_molecules",
         }
+        if allowed_tables is not None:
+            self.allowed_tables = set(allowed_tables)
+        self.allowed_tables -= denied_tables or set()
+        self.sensitive_columns = sensitive_columns or set()
 
     def tables(self) -> dict[str, list[dict[str, str]]]:
         sql = """
@@ -57,6 +63,8 @@ class PostgresSchemaInspector:
         with self.datasource.connect() as connection, connection.cursor() as cursor:
             cursor.execute(sql, (list(self.allowed_tables),))
             for row in cursor.fetchall():
+                if SENSITIVE_FIELD.search(row["column_name"]) or row["column_name"] in self.sensitive_columns:
+                    continue
                 schema.setdefault(row["table_name"], []).append(
                     {
                         "name": row["column_name"],
@@ -97,6 +105,10 @@ class PostgresQueryExecutor:
         self.max_rows = max_rows
 
     def check(self, sql: str, params: dict[str, Any] | None = None) -> None:
+        inspector = PostgresSchemaInspector(self.datasource)
+        schema = inspector.tables()
+        SQLGuard.validate_bindings(sql, params)
+        SQLGuard().validate(sql, set(schema), dialect="postgres", schema=schema, relationships=inspector.relationships())
         with self.datasource.connect() as connection, connection.cursor() as cursor:
             cursor.execute("SET TRANSACTION READ ONLY")
             cursor.execute("SELECT set_config('statement_timeout', %s, true)", (str(self.timeout_ms),))
@@ -104,10 +116,11 @@ class PostgresQueryExecutor:
             cursor.fetchone()
 
     def execute(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        self.check(sql, params)
         limited = f"SELECT * FROM ({sql.rstrip(';')}) AS guarded_query LIMIT {self.max_rows}"
         with self.datasource.connect() as connection, connection.cursor() as cursor:
             cursor.execute("SET TRANSACTION READ ONLY")
             cursor.execute("SELECT set_config('statement_timeout', %s, true)", (str(self.timeout_ms),))
             cursor.execute(limited, params or {})
-            return [dict(row) for row in cursor.fetchall()]
+            return sanitize_result([dict(row) for row in cursor.fetchall()])
 

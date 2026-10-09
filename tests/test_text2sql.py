@@ -35,9 +35,35 @@ def test_bm25_schema_retrieval():
     assert "training_molecules" in relevant
 
 
+def test_coverage_prompt_preserves_absent_members_and_original_outcome():
+    prompt = TextToSQLService().prompt("coverage", "sql", "training_db", SCHEMA, RELATIONSHIPS)
+    assert "LEFT JOIN" in prompt and "non-members and zero-count groups" in prompt
+    assert "observation-selected subgroup" in prompt
+
+
+def test_schema_search_keeps_authorized_fk_dimension_and_exact_repair_feedback(monkeypatch):
+    from app.tools.database_tools import DatabaseService
+    from app.models.schemas import ToolResult
+    service = object.__new__(DatabaseService)
+    service.datasource_id = "training_db"
+    service.schema = lambda: ToolResult(success=True, data=SCHEMA)
+    service.relationships = lambda: ToolResult(success=True, data=RELATIONSHIPS)
+    monkeypatch.setattr(SchemaRetriever, "search", lambda *args: [{"table": "training_molecules", "columns": SCHEMA["training_molecules"], "score": 1}])
+    result = service.search_schema("training coverage", limit=1)
+    assert {hit["table"] for hit in result.data} == set(SCHEMA)
+    assert result.metadata["relationship_expanded_tables"] == ["molecules"]
+    feedback = "grouping collapses original categories\nOriginal SQL: " + "x" * 350 + " FROM molecular_features"
+    prompt = TextToSQLService().prompt("统计不同结构类型", "sql-repair", "training_db", SCHEMA, RELATIONSHIPS, repair_feedback=feedback)
+    assert feedback in prompt
+    assert "do not invent a different error" in prompt
+
+
 @pytest.mark.asyncio
 async def test_text2sql_fallback_is_parameterized(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    # Explicit fixture fallback only; never spend the user's live-provider tokens.
+    monkeypatch.setattr("app.services.text2sql.ALLOW_DETERMINISTIC_LLM_FALLBACK", True)
+    monkeypatch.setattr(TextToSQLService, "_configured_llm", lambda self: None)
     candidate, metadata = await TextToSQLService().generate(
         "检查 fused-ring 覆盖", "training-coverage", "training_db", SCHEMA, RELATIONSHIPS, "train_v3"
     )
@@ -59,4 +85,3 @@ async def test_real_llm_integration_path_uses_structured_output():
     assert metadata["generator"] == "llm_structured_output"
     assert "Dataset version: train_v3" in model.prompt
     assert "%(dataset_version)s" in model.prompt
-

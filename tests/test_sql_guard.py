@@ -75,3 +75,16 @@ def test_schema_guard_rejects_unknown_unqualified_column_but_allows_projection_a
         {"molecules"},
         schema=schema,
     )
+
+
+def test_cte_alias_is_validated_against_derived_output():
+    schema = {"molecules": [{"name": "molecule_id"}, {"name": "structure_type"}]}
+    sql = "WITH counts AS (SELECT structure_type, COUNT(*) AS n FROM molecules GROUP BY structure_type) SELECT tc.n FROM counts tc"
+    assert SQLGuard().validate(sql, {"molecules"}, dialect="postgres", schema=schema)
+    with pytest.raises(SQLGuardError, match="derived schema"):
+        SQLGuard().validate(sql.replace("SELECT tc.n", "SELECT tc.nonexistent"), {"molecules"}, dialect="postgres", schema=schema)
+
+
+def test_cte_shadowing_cannot_hide_unauthorized_physical_table():
+    with pytest.raises(SQLGuardError, match="not authorized"):
+        SQLGuard().validate("WITH hidden AS (SELECT * FROM hidden) SELECT * FROM hidden", {"molecules"})

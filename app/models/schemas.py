@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Capability(str, Enum):
@@ -29,12 +29,66 @@ class ResourceSummary(BaseModel):
     authorized_datasources: list[str] = Field(default_factory=list)
     available_scientific_models: list[str] = Field(default_factory=list)
     available_mcp_tools: list[str] = Field(default_factory=list)
+    available_artifact_formats: list[str] = Field(default_factory=list)
+    resource_metadata: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    metadata_errors: list[str] = Field(default_factory=list)
+
+
+class ResourceBinding(BaseModel):
+    datasource_id: str | None = None
+    dataset_id: str | None = None
+    dataset_label: str | None = None
+    dataset_version: str | None = None
+    dataset_version_id: str | None = None
+    version_identifier_type: Literal["LABEL", "UUID", "PRIMARY_KEY"] = "LABEL"
+    run_ids: list[str] = Field(default_factory=list)
+    run_dataset_version_ids: list[str] = Field(default_factory=list)
+    run_labels: list[str] = Field(default_factory=list)
+    files: list[str] = Field(default_factory=list)
+    source: str = "authorized_metadata"
+    ambiguous_fields: list[str] = Field(default_factory=list)
+
+
+class QueryScope(BaseModel):
+    dataset_id: str | None = None
+    dataset_version: str | None = None
+    dataset_version_id: str | None = None
+    version_identifier_type: Literal["LABEL", "UUID", "PRIMARY_KEY"] = "LABEL"
+    split: str | None = None
+    whole_dataset: bool = False
+    entity: str | None = None
+    filters: dict[str, Any] = Field(default_factory=dict)
+    grouping: list[str] = Field(default_factory=list)
+    aggregation: str | None = None
+    comparison_target: list[str] = Field(default_factory=list)
+    user_constraints: list[str] = Field(default_factory=list)
+    datasource_id: str | None = None
+    all_versions: bool = False
+    authorized_version_ids: list[str] = Field(default_factory=list)
+    authorized_version_labels: list[str] = Field(default_factory=list)
+
+
+class PopulationRequest(BaseModel):
+    """Existing Decision proposes intent spans, never authorization or SQL."""
+    source_text: str
+    query_scope: QueryScope
+
+
+class PopulationRequirement(PopulationRequest):
+    population_id: str
+
+
+class CompletionCondition(BaseModel):
+    kind: Literal["SCHEMA", "TOOL_RESULTS", "EXECUTED_ROWS", "ARTIFACT"] = "TOOL_RESULTS"
+    required_tools: list[str] = Field(default_factory=list)
+    require_scope_match: bool = False
 
 
 class SQLCandidate(BaseModel):
     sql: str
     params: dict[str, Any] = Field(default_factory=dict)
     reason: str = ""
+    query_scope: QueryScope | None = None
 
 
 class ToolResult(BaseModel):
@@ -43,6 +97,33 @@ class ToolResult(BaseModel):
     source: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
+    outcome: Literal["SUCCESS", "EMPTY_RESULT", "INVALID_ARGUMENT", "UNSUPPORTED_OPERATION",
+                     "RESOURCE_NOT_FOUND", "EXECUTION_FAILED"] | None = None
+    failure_code: str | None = None
+    failed_stage: str | None = None
+    recoverable: bool | None = None
+    exception_type: str | None = None
+    reason_summary: str | None = None
+
+    @model_validator(mode="after")
+    def normalize_outcome(self):
+        if self.outcome is None:
+            if self.success:
+                self.outcome = "EMPTY_RESULT" if self.data is None or self.data == [] else "SUCCESS"
+            else:
+                message = (self.error or "").lower()
+                if any(token in message for token in ("not found", "does not exist", "missing file")):
+                    self.outcome = "RESOURCE_NOT_FOUND"
+                elif any(token in message for token in ("not available", "unavailable", "not configured", "not implemented")):
+                    self.outcome = "UNSUPPORTED_OPERATION"
+                elif any(token in message for token in ("invalid", "requires", "unknown ", "missing column", "exactly two")):
+                    self.outcome = "INVALID_ARGUMENT"
+                else:
+                    self.outcome = "EXECUTION_FAILED"
+        if not self.success:
+            self.failure_code = self.failure_code or self.outcome
+            self.reason_summary = self.reason_summary or self.error or self.exception_type or "tool execution failed"
+        return self
 
 
 class Evidence(BaseModel):
@@ -54,6 +135,8 @@ class Evidence(BaseModel):
     tool_call_id: str
     dataset_version: str | None = None
     model_version: str | None = None
+    query_scope: QueryScope | None = None
+    population_id: str | None = None
 
 
 class GroundedClaim(BaseModel):
@@ -63,6 +146,16 @@ class GroundedClaim(BaseModel):
     category: Literal["observation", "interpretation"] = "observation"
 
 
+class GoalCoverage(BaseModel):
+    status: Literal["SATISFIED", "PARTIAL", "UNSATISFIED", "UNVERIFIABLE"] = "UNVERIFIABLE"
+    required_dimensions: list[str] = Field(default_factory=list)
+    observed_dimensions: list[str] = Field(default_factory=list)
+    missing_dimensions: list[str] = Field(default_factory=list)
+    missing_populations: list[str] = Field(default_factory=list)
+    missing_deliverables: list[str] = Field(default_factory=list)
+    reason: str = ""
+
+
 class PlanStep(BaseModel):
     step_id: str
     goal: str
@@ -70,14 +163,49 @@ class PlanStep(BaseModel):
     required_capabilities: list[Capability] = Field(default_factory=list)
     preferred_tools: list[str] = Field(default_factory=list)
     selected_tools: list[str] = Field(default_factory=list)
-    status: Literal["pending", "running", "completed", "failed", "skipped"] = "pending"
+    status: Literal["pending", "running", "completed", "failed", "blocked", "skipped"] = "pending"
+    plan_id: str | None = None
+    query_scope: QueryScope | None = None
+    population_id: str | None = None
+    completion_condition: CompletionCondition | None = None
+    completion_evidence: list[str] = Field(default_factory=list)
     observations: list[dict[str, Any]] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
     result_summary: str | None = None
     error: str | None = None
 
 
+class AgentDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["ANSWER", "CALL_TOOL", "ASK_USER", "REPLAN", "FINISH", "REFUSE"]
+    goal: str | None = None
+    interaction_type: str = "scientific_task"
+    answer_basis: Literal["RESOURCE_CAPABILITY", "GENERAL_KNOWLEDGE", "PERSISTED_STATE", "TOOL_EVIDENCE"] = "TOOL_EVIDENCE"
+    tool_name: str | None = None
+    tool_arguments: dict[str, Any] = Field(default_factory=dict)
+    input_refs: dict[str, str] = Field(default_factory=dict, description="Argument -> observation:<call_id>:data or evidence:<id>:value; server supplies exact stored values.")
+    requested_context: list[str] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)
+    question_to_user: str | None = None
+    step_id: str | None = None
+    completed_step_ids: list[str] = Field(default_factory=list)
+    plan: list[PlanStep] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0, le=1)
+    reason_summary: str = Field(default="", max_length=600, description="Short public reason; never hidden chain-of-thought.")
+    requested_dimensions: list[str] = Field(default_factory=list,
+        description="Bare schema column names for original grouping dimensions (e.g. split, structure_type); never aggregate aliases, prose, metrics or export descriptions. Retain unavailable requested columns rather than substitute another metric.")
+    required_deliverables: list[Literal["database_analysis", "file_analysis", "artifact"]] = Field(default_factory=list)
+    population_requests: list[PopulationRequest] = Field(default_factory=list, max_length=6)
+    population_id: str | None = None
+
+
+class GroundedResponse(BaseModel):
+    answer: str
+    claims: list[GroundedClaim] = Field(default_factory=list)
+
+
 class ScientificAgentState(BaseModel):
+    artifacts: list[str] = Field(default_factory=list)
     user_id: str
     thread_id: str
     goal: str
@@ -91,19 +219,50 @@ class ScientificAgentState(BaseModel):
     selected_skills: list[str] = Field(default_factory=list)
     plan: list[PlanStep] = Field(default_factory=list)
     plan_version: int = 0
+    plan_id: str | None = None
     current_step: int = 0
     observations: list[ToolResult] = Field(default_factory=list)
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     tool_call_count: int = 0
     failure_count: int = 0
     replan_count: int = 0
+    no_progress_replan_count: int = 0
     evidence: list[Evidence] = Field(default_factory=list)
     claims: list[GroundedClaim] = Field(default_factory=list)
     uncertainties: list[str] = Field(default_factory=list)
     blocking_issues: list[str] = Field(default_factory=list)
     quality_status: str | None = None
     quality_issues: list[str] = Field(default_factory=list)
+    goal_coverage: GoalCoverage = Field(default_factory=GoalCoverage)
+    requested_dimensions: list[str] = Field(default_factory=list)
+    required_deliverables: list[str] = Field(default_factory=list)
     final_answer: str | None = None
+    user_request: str = ""
+    conversation_context: dict[str, Any] = Field(default_factory=dict)
+    resource_summary: ResourceSummary = Field(default_factory=ResourceSummary)
+    resource_hint: dict[str, Any] = Field(default_factory=dict)
+    allowed_tools: list[str] = Field(default_factory=list)
+    datasource_id: str | None = None
+    dataset_version: str | None = None
+    resource_binding: ResourceBinding = Field(default_factory=ResourceBinding)
+    query_scope: QueryScope = Field(default_factory=QueryScope)
+    populations: list[PopulationRequirement] = Field(default_factory=list)
+    requires_population_binding: bool = False
+    grounding_ready: bool = False
+    schema_cache: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    relationships_cache: list[dict[str, Any]] = Field(default_factory=list)
+    iteration_count: int = 0
+    consecutive_failures: int = 0
+    errors: list[str] = Field(default_factory=list)
+    decision: AgentDecision | None = None
+    decision_valid: bool = True
+    decision_telemetry: dict[str, Any] = Field(default_factory=dict)
+    control_observations: list[dict[str, Any]] = Field(default_factory=list)
+    tool_cache: dict[str, ToolResult] = Field(default_factory=dict)
+    hitl_answers: list[dict[str, str]] = Field(default_factory=list)
+    task_id: str | None = None
+    conversation_id: str | None = None
+    runtime_status: str = "running"
 
 
 class SSEEvent(BaseModel):
@@ -145,8 +304,48 @@ class TaskRefinementPatch(BaseModel):
     dataset_version: str | None = None
     model_version: str | None = None
     subgroup: str | None = None
+    datasource_id: str | None = None
+    resource: str | None = None
+    split: str | None = None
+    filters: dict[str, Any] = Field(default_factory=dict)
+    full_rows: bool = False
     output_format: Literal["table", "chart"] | None = None
     changed_fields: list[str] = Field(default_factory=list)
+
+
+class FollowUpDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    interaction_type: Literal["NEW_TASK", "RESULT_EXPLANATION", "EVIDENCE_QUERY", "PROVENANCE_QUERY",
+                              "ERROR_QUESTION", "TASK_REFINEMENT", "RERUN", "CONTINUE_ANALYSIS", "CLARIFY"] = Field(
+        description="Semantic information need. CLARIFY only when need or target is unresolved AFTER applying the latest-task default; never ask permission to read known history.")
+    target_task_id: str | None = None
+    target_reference: Literal["LATEST", "EXPLICIT", "AMBIGUOUS"] = "LATEST"
+    target_selector_type: Literal["TASK_ID", "VERSION", "ORDER"] | None = None
+    target_reference_text: str | None = Field(default=None, description="Exact current-user quote selecting another task, never text copied from previous messages.")
+    requested_content: list[Literal["answer", "claim", "evidence", "sql", "params", "raw_rows",
+                                   "tools", "artifacts", "uncertainty", "error"]] = Field(default_factory=list)
+    requires_execution: bool = False  # Semantic suggestion; the state resolver owns the final value.
+    refinement_patch: TaskRefinementPatch | None = None
+    reason: str = Field(default="", max_length=200)
+    clarification_question: str | None = None
+    source: str = "llm_structured"
+    llm_telemetry: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def follow_up_type(self) -> str:
+        # Preserve the existing trace wire contract; routing uses interaction_type.
+        return {"EVIDENCE_QUERY": "EVIDENCE_EXPLANATION", "PROVENANCE_QUERY": "EVIDENCE_EXPLANATION",
+                "TASK_REFINEMENT": "REFINE_PREVIOUS_TASK", "RERUN": "RERUN_PREVIOUS_TASK"}.get(
+                    self.interaction_type, self.interaction_type)
+
+
+class StateSufficiency(BaseModel):
+    action: Literal["REUSE", "EXECUTE", "CLARIFY", "INSUFFICIENT"]
+    requires_execution: bool = False
+    available_content: list[str] = Field(default_factory=list)
+    missing_content: list[str] = Field(default_factory=list)
+    reason: str = ""
+    scope_issues: list[str] = Field(default_factory=list)
 
 
 class ConversationContextSummary(BaseModel):
@@ -174,12 +373,18 @@ class ProvenanceRecord(BaseModel):
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     sql_candidate: dict[str, Any] | None = None
     sql_params: dict[str, Any] = Field(default_factory=dict)
+    params_recorded: bool = False
     sql_raw_result: Any = None
+    file_raw_results: list[dict[str, Any]] = Field(default_factory=list)
     evidence: list[dict[str, Any]] = Field(default_factory=list)
     claims: list[dict[str, Any]] = Field(default_factory=list)
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
     final_answer: str | None = None
     uncertainties: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    recovery_history: list[dict[str, Any]] = Field(default_factory=list)
+    query_scope: dict[str, Any] = Field(default_factory=dict)
+    raw_rows_complete: bool = False
 
 
 class ChatRequest(BaseModel):

@@ -8,10 +8,10 @@ import re
 import uuid
 
 from app.config import DEMO_DATA, ENABLE_DEMO_DATA, MAX_REPLANS, MAX_TOOL_CALLS, TASK_TIMEOUT
-from app.agents.planning_graph import build_planning_graph
+from app.agents.planning_graph import canonical_plan
 from app.agents.planning_policy import PlanningPolicy
 from app.agents.request_router import RequestRouter
-from app.agents.deep_runtime import DeepAgentRuntime
+from app.agents.runtime import DecisionRuntime
 from app.models.schemas import Capability, Evidence, GroundedClaim, PlanStep, RequestIntent, ResourceSummary, SSEEvent, ScientificAgentState, ToolResult
 from app.services.resources import ResourceService
 from app.services.skills import SkillService
@@ -60,13 +60,24 @@ class ScientificAgent:
             files=self.files,
             mcp=self.mcp,
             artifacts=self.artifact_service,
-            database_factory=DatabaseService,
+            database_factory=lambda selected, allowed: DatabaseService(selected, allowed),
         )
         self.pending: dict[str, dict] = {}
         self.checkpointing = checkpoint_service
-        self.planning_graph = build_planning_graph(self.checkpointing.checkpointer)
+        self.planning_graph = None  # Legacy stage graph is not a product executor.
         self.planning_policy = PlanningPolicy()
-        self.deep_runtime = DeepAgentRuntime(self.checkpointing, self.workspace)
+        self.runtime = DecisionRuntime(self)
+
+    async def stream(self, query, user_id, thread_id, datasource_id=None, dataset_version=None,
+                     skip_hitl=False, conversation_context=None):
+        # Legacy signature retained; production cannot bypass ASK_USER.
+        async for item in self.runtime.stream(query, user_id, thread_id, datasource_id,
+                                              dataset_version, conversation_context):
+            yield item
+
+    async def resume(self, thread_id, answer, user_id=None):
+        async for item in self.runtime.resume(thread_id, answer, user_id):
+            yield item
 
     @staticmethod
     def _artifact_preferences(query: str) -> tuple[bool, bool]:
@@ -76,7 +87,7 @@ class ScientificAgent:
             word in text for word in ("画图", "图表", "可视化", "png", "chart", "plot")
         )
         wants_table = any(
-            word in text for word in ("表格", "结果表", "导出", "保存", "csv", "xlsx", "excel", "table")
+            word in text for word in ("表格", "结果表", "导出", "保存", "export", "save", "table")
         )
         return wants_table, wants_chart
 
@@ -90,6 +101,11 @@ class ScientificAgent:
         if any(word in text for word in ("mae", "rmse", "指标", "预测误差", "模型误差")):
             return "calculate_metrics"
         return "inspect_table"
+
+    @staticmethod
+    def _active_file_tools(state: ScientificAgentState, query: str) -> set[str]:
+        running = [step for step in state.plan if step.status == "running"]
+        return {name for step in running for name in (step.selected_tools or step.preferred_tools)}
 
     @staticmethod
     def _start_plan_step(state: ScientificAgentState, step_id: str) -> PlanStep:
@@ -210,7 +226,7 @@ class ScientificAgent:
             (
                 row
                 for row in rows
-                if row.get("structure_type") == "fused_ring" or row.get("is_fused_ring") is True
+                if str(row.get("structure_type", "")).strip().lower().replace("-", "_").replace(" ", "_") == "fused_ring" or row.get("is_fused_ring") is True
             ),
             None,
         )
@@ -220,10 +236,9 @@ class ScientificAgent:
                 state.uncertainties.append(message)
                 state.blocking_issues.append(message)
             return [details]
-        fused_count = fused_row.get(
-            "sample_count",
-            fused_row.get("train_molecule_count", fused_row.get("molecule_count")),
-        )
+        fused_count = next((fused_row[key] for key in (
+            "sample_count", "train_molecule_count", "molecule_count", "coverage_count", "training_count", "count"
+        ) if fused_row.get(key) is not None), None)
         if fused_count is None:
             message = "fused_ring 分组缺少样本数/训练覆盖字段。"
             state.uncertainties.append(message)
@@ -285,7 +300,10 @@ class ScientificAgent:
         try:
             database = DatabaseService(selected, resources.authorized_datasources)
             yield event("TOOL_STARTED", "检查数据集比较所需 Schema", tool="get_table_schema", datasource=selected)
-            schema_result = await bounded_transient_retry(lambda: asyncio.to_thread(database.schema))
+            context = ToolExecutionContext(state.user_id, state.thread_id, resources, selected,
+                allowed_capabilities={"database"}, allowed_tools={"get_table_schema", "execute_readonly_sql"})
+            schema_result = await bounded_transient_retry(lambda: self.tool_dispatcher.execute(
+                ToolChoice(tool="get_table_schema", arguments={"table": "*"}, reason="comparison schema precondition"), context))
             self._record_tool(state, "get_table_schema", schema_result)
             yield event("TOOL_FINISHED", "Schema 检查完成", tool="get_table_schema", result=schema_result.model_dump())
             missing = missing_columns(schema_result.data)
@@ -300,7 +318,8 @@ class ScientificAgent:
             self._record_tool(state, "query_checker", checked)
             yield event("TOOL_FINISHED", "只读 SQL 校验完成", tool="query_checker", result=checked.model_dump())
             yield event("TOOL_STARTED", "查询两个数据集版本的结构组成", tool="execute_readonly_sql", datasource=selected)
-            result = await bounded_transient_retry(lambda: asyncio.to_thread(database.execute, CROSS_DATASET_SQL, params))
+            result = await bounded_transient_retry(lambda: self.tool_dispatcher.execute(
+                ToolChoice(tool="execute_readonly_sql", arguments={"sql": CROSS_DATASET_SQL, "params": params}, reason="validated cross-dataset plan step"), context))
             call_id = self._record_tool(state, "execute_readonly_sql", result)
             yield event("TOOL_FINISHED", "版本结构组成查询完成", tool="execute_readonly_sql", result=result.model_dump())
         except Exception as exc:
@@ -377,7 +396,9 @@ class ScientificAgent:
             yield event("TOOL_STARTED", "按 molecule_id 关联文件与版本化数据库", tool="cross_resource_join",
                         datasource=selected, file=file_path.name, dataset_version=dataset_version)
             await asyncio.to_thread(database.check_query, sql, params)
-            result = await asyncio.to_thread(database.execute, sql, params)
+            context = ToolExecutionContext(state.user_id, state.thread_id, resources, selected,
+                allowed_capabilities={"database"}, allowed_tools={"execute_readonly_sql"})
+            result = await self.tool_dispatcher.execute(ToolChoice(tool="execute_readonly_sql", arguments={"sql": sql, "params": params}, reason="validated stable molecule_id join"), context)
             result.metadata.update({"file": file_path.name, "join_key": "molecule_id"})
             call_id = self._record_tool(state, "cross_resource_join", result)
             yield event("TOOL_FINISHED", "跨资源只读关联完成", tool="cross_resource_join", result=result.model_dump())
@@ -398,7 +419,9 @@ class ScientificAgent:
         yield event("EVIDENCE_ADDED", "已保存文件侧关联键", evidence=file_evidence.model_dump())
         raw_rows = result.data if isinstance(result.data, list) else []
         if not raw_rows:
-            state.uncertainties.append("版本化数据库中未找到文件分子的关联记录；不能推断其科学上不存在")
+            message = "版本化数据库中未找到文件分子的关联记录；不能推断其科学上不存在"
+            state.uncertainties.append(message)
+            state.blocking_issues.append(message)
             return
         raw = self._add_evidence(state, "文件分子在版本化训练集中的原始关联行", raw_rows, "database",
                                  selected, call_id, dataset_version)
@@ -432,6 +455,7 @@ class ScientificAgent:
         query: str,
         datasource_id: str | None,
         dataset_version: str | None,
+        initial_choice: ToolChoice | None = None,
     ) -> AsyncIterator[SSEEvent]:
         selected = datasource_id or "training_db"
         if not state.plan:
@@ -457,12 +481,15 @@ class ScientificAgent:
             thread_id=state.thread_id,
             resources=resources,
             datasource_id=selected,
+            allowed_capabilities={"database"},
+            allowed_tools={"search_schema", "get_table_schema", "get_table_relationships", "execute_readonly_sql"},
+            remaining_budget=lambda: MAX_TOOL_CALLS - state.tool_call_count,
         )
         yield event("TOOL_STARTED", "正在检索相关数据库 Schema", tool="search_schema", datasource=selected)
         try:
             schema_hits = await bounded_transient_retry(
                 lambda: self.tool_dispatcher.execute(
-                    ToolChoice(
+                    initial_choice if initial_choice and initial_choice.tool == "search_schema" else ToolChoice(
                         tool="search_schema",
                         arguments={"query": query},
                         reason="current plan step requires schema retrieval",
@@ -590,6 +617,7 @@ class ScientificAgent:
         yield event("TOOL_STARTED", "正在执行 SQL Guard 与 Query Checker", tool="query_checker", datasource=selected)
         repaired = False
         try:
+            TextToSQLService.validate_goal_projection(candidate.sql, sql_goal)
             checked = database.check_query(candidate.sql, candidate.params)
         except Exception as exc:
             decision = classify_failure(exc, tool="query_checker")
@@ -634,7 +662,7 @@ class ScientificAgent:
             candidate, generation = await bounded_transient_retry(lambda: self.text2sql.generate(
                 goal=sql_goal, current_step="sql-repair", datasource=selected,
                 full_schema=sql_schema, relationships=sql_relationships,
-                dataset_version=dataset_version, repair_feedback=str(exc),
+                dataset_version=dataset_version, repair_feedback=f"{exc}\nOriginal SQL: {candidate.sql}",
                 skill_context=skill_context,
             ))
             if (candidate.sql, tuple(sorted(candidate.params.items()))) == previous_sql:
@@ -648,6 +676,7 @@ class ScientificAgent:
             self._record_tool(state, "text_to_sql", regenerated)
             yield event("TOOL_FINISHED", "重规划 SQL 已生成", tool="text_to_sql", result=regenerated.model_dump())
             try:
+                TextToSQLService.validate_goal_projection(candidate.sql, sql_goal)
                 checked = database.check_query(candidate.sql, candidate.params)
             except Exception as repair_exc:
                 revised_step.status = "failed"
@@ -729,7 +758,7 @@ class ScientificAgent:
             state.current_step = len(state.plan)
             yield event("PLAN_STEP_FINISHED", "计划步骤完成", step_id="training-coverage", status="completed")
 
-    async def stream(
+    async def _legacy_stream(
         self,
         query: str,
         user_id: str,
@@ -739,9 +768,14 @@ class ScientificAgent:
         skip_hitl: bool = False,
     ) -> AsyncIterator[SSEEvent]:
         async with asyncio.timeout(TASK_TIMEOUT):
+            self.tool_dispatcher.mcp = self.mcp
             resources = self.resources.discover(user_id, thread_id)
             yield event("UNDERSTANDING_INTENT", "正在理解科研任务", resources=resources.model_dump())
             intent = await self.router.route_async(query, resources)
+            if intent.task_type == "scientific_model" and not resources.available_scientific_models:
+                yield event("INTENT_RESOLVED", "科研模型能力未配置", intent=intent.model_dump(mode="json"), selected_skills=[])
+                yield event("FINAL_ANSWER", "科研模型能力不可用", answer="CAPABILITY_UNAVAILABLE：当前未配置可验证的真实 Scientific Model 权重与适配器，无法执行模型推理。", new_tool_calls=0)
+                return
             explicit_versions = list(dict.fromkeys(
                 match.group(0).lower().replace("-", "_")
                 for match in re.finditer(r"train[_-]?v\d+", query, re.I)
@@ -782,6 +816,8 @@ class ScientificAgent:
                 "database_analysis": "search_schema",
                 "scientific_model": "predict_rt",
             }.get(intent.task_type)
+            if intent.task_type == "general" and Capability.MCP in intent.required_capabilities:
+                first_tool = "get_molecule_features"
             # The plan step is the hard execution boundary. For a clear first
             # step, the LLM chooses arguments/reasoning only within that tool
             # contract instead of widening back to unrelated tools.
@@ -797,7 +833,7 @@ class ScientificAgent:
             )
             argument_context = {
                 "query": query,
-                "filename": selection_files[0] if len(selection_files) == 1 else None,
+                "filename": selection_files[0] if selection_files else None,
                 "filenames": selection_files or None,
                 "group": "structure_type" if any(word in query.lower() for word in ("结构", "structure", "fused", "cyclic")) else None,
                 "datasource_id": datasource_id,
@@ -878,79 +914,9 @@ class ScientificAgent:
                     llm_telemetry=planning_telemetry,
                     max_replans=MAX_REPLANS,
                 )
-                # DeepAgents is used only when it has a concrete bounded sub-task:
-                # explicit molecule-level MCP enrichment. It is not invoked as a
-                # decorative extra hop for ordinary SQL/file workflows.
-                if molecule_match and "mcp" in state.available_tools:
-                    yield event("TOOL_STARTED", "正在启动 DeepAgents 科研子任务", tool="deepagents_runtime")
-                    runtime_trace = await self.deep_runtime.run_bounded_subtask(
-                        query, user_id, thread_id, state.selected_skills
-                    )
-                    state.tool_calls.append({
-                        "tool_call_id": f"runtime-{len(state.tool_calls) + 1}",
-                        "tool": "deepagents_runtime",
-                        "success": True,
-                    })
-                    yield event(
-                        "TOOL_FINISHED",
-                        "DeepAgents 科研子任务完成",
-                        tool="deepagents_runtime",
-                        result=runtime_trace,
-                    )
-                    for runtime_call in runtime_trace.get("tool_calls", []):
-                        if runtime_call.get("tool") != "mcp:get_molecule_features":
-                            continue
-                        result_payload = runtime_call.get("result")
-                        if not isinstance(result_payload, dict):
-                            continue
-                        mcp_result = ToolResult.model_validate(result_payload)
-                        molecule_id = str(runtime_call.get("molecule_id") or molecule_match.group(1)).upper()
-                        deep_mcp_results[molecule_id] = mcp_result
-                        mcp_call_id = self._record_tool(state, "mcp:get_molecule_features", mcp_result)
-                        yield event(
-                            "TOOL_FINISHED",
-                            "DeepAgents 子工具执行完成",
-                            tool="mcp:get_molecule_features",
-                            molecule_id=molecule_id,
-                            result=mcp_result.model_dump(),
-                            parent_tool="deepagents_runtime",
-                        )
-                        if mcp_result.success:
-                            payload = (
-                                mcp_result.data.get("result", mcp_result.data)
-                                if isinstance(mcp_result.data, dict) else {}
-                            )
-                            structure_type = payload.get("structure_type") if isinstance(payload, dict) else None
-                            mcp_evidence = self._add_evidence(
-                                state,
-                                f"{molecule_id} 结构类型",
-                                structure_type,
-                                "mcp",
-                                "mcp:get_molecule_features",
-                                mcp_call_id,
-                                None,
-                            )
-                            yield event(
-                                "EVIDENCE_ADDED",
-                                "DeepAgents 已获得 MCP 科研证据",
-                                evidence=mcp_evidence.model_dump(),
-                            )
-                        else:
-                            decision = classify_failure(
-                                mcp_result.error or "MCP service unavailable",
-                                tool="mcp:get_molecule_features",
-                            )
-                            state.uncertainties.append(
-                                f"DeepAgents MCP 子任务未获得 {molecule_id} 分子特征："
-                                f"{mcp_result.error or decision.failure_kind}"
-                            )
-                            yield event(
-                                "RECOVERY_DECISION",
-                                "DeepAgents MCP 子任务失败，主计划继续使用其他已验证证据",
-                                failure_kind=decision.failure_kind,
-                                action=decision.action,
-                                reason=decision.reason[:500],
-                            )
+            if not state.plan:
+                state.plan = [PlanStep.model_validate(step) for step in canonical_plan(intent.model_dump(mode="json"))]
+                yield event("PLAN_CREATED", "已建立可执行计划", plan=[p.model_dump(mode="json") for p in state.plan])
             execute_step = (
                 self._start_plan_step(state, "execute")
                 if any(step.step_id == "execute" for step in state.plan) else None
@@ -969,6 +935,10 @@ class ScientificAgent:
                         if resources.available_files
                         else "请上传用于分析的 CSV/Excel 文件。"
                     )
+                    await self.checkpointing.start_hitl({
+                        "query": query, "user_id": user_id, "thread_id": thread_id, "datasource_id": datasource_id,
+                        "waiting_kind": "file", "question": question,
+                    })
                     yield event(
                         "WAITING_FOR_USER",
                         "等待用户补充信息",
@@ -980,6 +950,10 @@ class ScientificAgent:
                 missing = [name for name in names if name not in resources.available_files]
                 if missing:
                     self.pending[thread_id] = {"query": query, "user_id": user_id, "datasource_id": datasource_id}
+                    await self.checkpointing.start_hitl({
+                        "query": query, "user_id": user_id, "thread_id": thread_id, "datasource_id": datasource_id,
+                        "waiting_kind": "file", "question": f"请上传缺失文件：{', '.join(missing)}",
+                    })
                     yield event("WAITING_FOR_USER", "等待用户补充信息", question=f"请上传缺失文件：{', '.join(missing)}", missing_files=missing)
                     return
                 dispatch_context = ToolExecutionContext(
@@ -987,6 +961,12 @@ class ScientificAgent:
                     thread_id=thread_id,
                     resources=resources,
                     datasource_id=datasource_id,
+                    allowed_capabilities=candidate_capabilities,
+                    allowed_tools={spec.name for spec in self.tool_registry.candidates(
+                        available_capabilities=candidate_capabilities, role="researcher",
+                        selected_skills=state.selected_skills)},
+                    remaining_budget=lambda: MAX_TOOL_CALLS - state.tool_call_count,
+                    active_step_tools=lambda: self._active_file_tools(state, query),
                 )
                 if intent.complexity == "simple":
                     if selected_choice is None:
@@ -1051,7 +1031,7 @@ class ScientificAgent:
                                     status="running",
                                 )
                             path = self._file_path(user_id, thread_id, names[0])
-                            fallback = self.files.inspect_table(path)
+                            fallback = await self.tool_dispatcher.execute(ToolChoice(tool="inspect_table", arguments={"filename": names[0]}, reason="schema mismatch observation"), dispatch_context)
                             fallback_call = self._record_tool(state, "inspect_table", fallback)
                             result.metadata["recovered"] = fallback.success
                             result.metadata["alternative_tool"] = "inspect_table"
@@ -1129,15 +1109,19 @@ class ScientificAgent:
                     )
                     if comparison_step:
                         yield event("PLAN_STEP_STARTED", "开始执行计划步骤", step_id="file-comparison", status="running")
-                    for name in names[:2]:
+                    if not selected_choice or selected_choice.tool != "calculate_metrics" or selected_choice.arguments.get("filename") not in names[:2]:
+                        state.blocking_issues.append("所选 ToolCall 未绑定到本任务明确要求的模型文件")
+                        state.final_answer = self._finalize(state)
+                        yield event("FINAL_ANSWER", "工具调用未通过任务资源校验", answer=state.final_answer, state=state.model_dump(mode="json"))
+                        return
+                    metric_names = [selected_choice.arguments["filename"], *[name for name in names[:2] if name != selected_choice.arguments["filename"]]]
+                    for index, name in enumerate(metric_names):
                         path = self._file_path(user_id, thread_id, name)
-                        yield event("TOOL_STARTED", "正在计算指标", tool="calculate_metrics", source=name)
+                        metric_choice = selected_choice if index == 0 else ToolChoice(
+                            tool="calculate_metrics", arguments={"filename": name}, reason="same validated plan operation for the second required model")
+                        yield event("TOOL_STARTED", "正在计算指标", tool=metric_choice.tool, source=name, arguments=metric_choice.arguments)
                         result = await self.tool_dispatcher.execute(
-                            ToolChoice(
-                                tool="calculate_metrics",
-                                arguments={"filename": name},
-                                reason="file-comparison plan step",
-                            ),
+                            metric_choice,
                             dispatch_context,
                         )
                         call_id = self._record_tool(state, "calculate_metrics", result)
@@ -1147,7 +1131,7 @@ class ScientificAgent:
                         if not result.success:
                             decision = classify_failure(result.error or "file metric tool failed", tool="calculate_metrics")
                             if decision.action == "alternative_tool":
-                                fallback = self.files.inspect_table(path)
+                                fallback = await self.tool_dispatcher.execute(ToolChoice(tool="inspect_table", arguments={"filename": name}, reason="schema mismatch observation"), dispatch_context)
                                 fallback_call = self._record_tool(state, "inspect_table", fallback)
                                 result.metadata["recovered"] = fallback.success
                                 result.metadata["alternative_tool"] = "inspect_table"
@@ -1236,10 +1220,10 @@ class ScientificAgent:
                     if self.storage.configured and model_results and (wants_table or wants_chart):
                         if wants_chart:
                             try:
-                                chart = self.artifact_service.plot_metric_comparison(
-                                    user_id, thread_id, model_results, "metric_comparison.png"
-                                )
-                                chart_result = ToolResult(success=True, data=chart, source=chart["object_key"])
+                                chart_result = await self.tool_dispatcher.execute(ToolChoice(tool="plot_metric_comparison", arguments={"metrics": model_results}, reason="requested chart output"), dispatch_context)
+                                if not chart_result.success:
+                                    raise ValueError(chart_result.error)
+                                chart = chart_result.data
                                 self._record_tool(state, "plot_metric_comparison", chart_result)
                                 state.artifacts.append(chart["object_key"])
                                 yield event("ARTIFACT_CREATED", "已生成模型指标比较图", artifact=chart)
@@ -1261,11 +1245,11 @@ class ScientificAgent:
                         if wants_table:
                             try:
                                 table_rows = [{"model": name, **values} for name, values in model_results.items()]
-                                table = self.artifact_service.save_result_table(
-                                    user_id, thread_id, table_rows, "model_metrics.csv", "csv",
-                                    required_columns={"model", "mae", "rmse"},
-                                )
-                                table_result = ToolResult(success=True, data=table, source=table["object_key"])
+                                table_format = "xlsx" if re.search(r"xlsx|excel", query, flags=re.I) else "csv"
+                                table_result = await self.tool_dispatcher.execute(ToolChoice(tool="save_result_table", arguments={"rows": table_rows, "format": table_format, "filename": f"model_metrics.{table_format}", "required_columns": ["model", "mae", "rmse"]}, reason="requested evidence table output"), dispatch_context)
+                                if not table_result.success:
+                                    raise ValueError(table_result.error)
+                                table = table_result.data
                                 self._record_tool(state, "save_result_table", table_result)
                                 state.artifacts.append(table["object_key"])
                                 yield event("ARTIFACT_CREATED", "已保存模型指标表", artifact=table)
@@ -1313,6 +1297,17 @@ class ScientificAgent:
                         if subgroup_step:
                             subgroup_step.observations.append({"tool": "group_metrics", "success": subgroup.success})
                         yield event("TOOL_FINISHED", "结构子群分析完成", tool="group_metrics", result=subgroup.model_dump())
+                        if subgroup.success and any(word in query.lower() for word in ("高误差", "最大误差", "high error", "highest error")):
+                            high_choice = ToolChoice(tool="find_high_error_samples", arguments={"filename": target_name, "limit": 5}, reason="requested high-error sample provenance")
+                            yield event("TOOL_STARTED", "定位高误差原始样本", tool=high_choice.tool, arguments=high_choice.arguments)
+                            high_result = await self.tool_dispatcher.execute(high_choice, dispatch_context)
+                            high_call = self._record_tool(state, high_choice.tool, high_result)
+                            yield event("TOOL_FINISHED", "高误差样本查询完成", tool=high_choice.tool, result=high_result.model_dump())
+                            if high_result.success and high_result.data:
+                                high_evidence = self._add_evidence(state, f"{target_name} 绝对误差最高的 5 个样本（排序而非阈值定义）", high_result.data, "file", target_name, high_call, self._file_dataset_version(target_path))
+                                yield event("EVIDENCE_ADDED", "已保存高误差样本原始证据", evidence=high_evidence.model_dump())
+                                if subgroup_step:
+                                    subgroup_step.evidence_ids.append(high_evidence.evidence_id)
                         if not subgroup.success:
                             decision = classify_failure(subgroup.error or "group analysis failed", tool="group_metrics")
                             if decision.action == "alternative_tool":
@@ -1344,7 +1339,7 @@ class ScientificAgent:
                                         step_id=recovery_step.step_id,
                                         status="running",
                                     )
-                                fallback = self.files.inspect_table(target_path)
+                                fallback = await self.tool_dispatcher.execute(ToolChoice(tool="inspect_table", arguments={"filename": names[-1]}, reason="subgroup schema mismatch observation"), dispatch_context)
                                 fallback_call = self._record_tool(state, "inspect_table", fallback)
                                 subgroup.metadata["recovered"] = fallback.success
                                 subgroup.metadata["alternative_tool"] = "inspect_table"
@@ -1436,7 +1431,7 @@ class ScientificAgent:
                                         transport="stdio",
                                         molecule_id=molecule_id,
                                     )
-                                    molecule = await self.mcp.call("get_molecule_features", {"molecule_id": molecule_id})
+                                    molecule = await self.tool_dispatcher.execute(ToolChoice(tool="get_molecule_features", arguments={"molecule_id": molecule_id}, reason="explicit molecule enrichment"), dispatch_context)
                                     mcp_call_id = self._record_tool(state, "mcp:get_molecule_features", molecule)
                                     yield event(
                                         "TOOL_FINISHED",
@@ -1483,7 +1478,8 @@ class ScientificAgent:
 
             if intent.task_type in {"database_analysis", "mixed_analysis"}:
                 async for database_event in self._run_database_branch(
-                    state, resources, intent, query, datasource_id, effective_dataset_version
+                    state, resources, intent, query, datasource_id, effective_dataset_version,
+                    initial_choice=selected_choice if intent.task_type == "database_analysis" else None,
                 ):
                     yield database_event
                 if state.final_answer is not None:
@@ -1524,7 +1520,19 @@ class ScientificAgent:
                         )
 
             if intent.task_type == "general":
-                state.uncertainties.append("未识别到需要调用的已授权资源")
+                if "mcp" in state.available_tools and molecule_match and not deep_mcp_results:
+                    context = ToolExecutionContext(user_id, thread_id, resources, allowed_capabilities={"mcp"},
+                                                   allowed_tools={"get_molecule_features"})
+                    choice = selected_choice or ToolChoice(tool="get_molecule_features", arguments={"molecule_id": molecule_match.group(1).upper()}, reason="explicit molecule identity")
+                    yield event("TOOL_STARTED", "执行分子特征查询", tool=choice.tool, arguments=choice.arguments)
+                    result = await self.tool_dispatcher.execute(choice, context)
+                    call_id = self._record_tool(state, choice.tool, result)
+                    yield event("TOOL_FINISHED", "分子特征查询完成", tool=choice.tool, result=result.model_dump())
+                    if result.success:
+                        evidence = self._add_evidence(state, f"{molecule_match.group(1).upper()} 分子特征", result.data, "mcp", "mcp:get_molecule_features", call_id)
+                        yield event("EVIDENCE_ADDED", "已获得分子特征证据", evidence=evidence.model_dump())
+                elif not state.evidence:
+                    state.uncertainties.append("未识别到需要调用的已授权资源")
 
             if execute_step:
                 execute_step.observations = [result.model_dump(mode="json") for result in state.observations]
@@ -1538,6 +1546,14 @@ class ScientificAgent:
     @staticmethod
     def _evidence_quality_issues(state: ScientificAgentState) -> list[str]:
         issues: list[str] = list(state.blocking_issues)
+        def has_error_metrics(value):
+            if isinstance(value, dict):
+                return any((str(key).lower() in {"mae", "rmse", "absolute_error", "mae_left", "mae_right", "rmse_left", "rmse_right"}
+                            and type(item) in (int, float))
+                           or has_error_metrics(item) for key, item in value.items())
+            if isinstance(value, list):
+                return any(has_error_metrics(item) for item in value)
+            return False
         for result in state.observations:
             if not result.success and not result.metadata.get("recovered"):
                 issues.append(f"工具执行失败：{result.error or result.source}")
@@ -1579,10 +1595,7 @@ class ScientificAgent:
                     "mae" in item.claim.lower()
                     or "rmse" in item.claim.lower()
                     or "误差" in item.claim
-                    or (
-                        isinstance(item.value, dict)
-                        and any(str(key).lower() in {"mae", "rmse", "absolute_error"} for key in item.value)
-                    )
+                    or has_error_metrics(item.value)
                 )
                 for item in state.evidence
             )
@@ -1611,6 +1624,7 @@ class ScientificAgent:
                         "mae" in item.claim.lower()
                         or "rmse" in item.claim.lower()
                         or "误差" in item.claim
+                        or has_error_metrics(item.value)
                     )
                     for item in state.evidence
                 )
@@ -1630,9 +1644,16 @@ class ScientificAgent:
             for item in state.evidence:
                 if item.source_type == "database" and item.dataset_version and item.dataset_version.lower() != expected:
                     issues.append(f"Evidence {item.evidence_id} 数据版本 {item.dataset_version} 与目标 {expected} 不一致")
-        observed: dict[tuple[str, str, str | None], str] = {}
+        observed: dict[tuple, str] = {}
+        calls = {call.get("tool_call_id"): call for call in state.tool_calls}
         for item in state.evidence:
-            key = (item.claim, item.source, item.dataset_version)
+            call = calls.get(item.tool_call_id)
+            # Generic tool-result claims are not the same scientific query.
+            # Compare repeated requests, not run-ID lookup versus grouped MAE
+            # merely because both came from execute_readonly_sql.
+            request = json.dumps({"tool": call.get("tool"), "arguments": call.get("arguments", {})},
+                                 sort_keys=True, ensure_ascii=False, default=str) if call else None
+            key = (item.claim, item.source, item.dataset_version, request)
             value = repr(item.value)
             if key in observed and observed[key] != value:
                 issues.append(f"Evidence 对同一来源、版本和结论 {item.claim} 的数值相互矛盾")
@@ -1791,7 +1812,7 @@ class ScientificAgent:
             item for item in state.evidence
             if item.dataset_version and item.dataset_version.startswith("synthetic_demo")
         ]
-        if synthetic:
+        if synthetic or any(item.metadata.get("data_origin") == "synthetic_demo" for item in state.observations):
             lines += [
                 "",
                 "**数据说明**",
@@ -1799,12 +1820,18 @@ class ScientificAgent:
             ]
         return "\n".join(lines)
 
-    async def resume(self, thread_id: str, answer: str, user_id: str | None = None) -> AsyncIterator[SSEEvent]:
+    async def _legacy_resume(self, thread_id: str, answer: str, user_id: str | None = None) -> AsyncIterator[SSEEvent]:
         if self.checkpointing.checkpoint_exists(thread_id):
             try:
                 resumed = await self.checkpointing.resume_hitl(thread_id, answer)
             except Exception as exc:
                 yield event("ERROR", "检查点恢复失败", error=str(exc), thread_id=thread_id)
+                return
+            if resumed.get("status") == "file_ready":
+                self.pending.pop(thread_id, None)
+                restored_query = f"{resumed['query']}\n用户补充：{resumed.get('answer', '')}"
+                async for item in self.stream(restored_query, resumed["user_id"], thread_id, resumed.get("datasource_id")):
+                    yield item
                 return
             if resumed.get("status") == "ready":
                 yield event(

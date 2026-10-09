@@ -16,7 +16,7 @@ test('real browser follow-up reuses persisted evidence without SQL', async t => 
     await page.locator('.composer textarea').fill('给我你得到的这些证据')
     await page.locator('.composer .send').click()
     await page.waitForFunction(expected => document.querySelectorAll('.message-row.assistant').length > expected, before)
-    assert.match(await page.locator('.trace-block').first().innerText(), /EVIDENCE_EXPLANATION/)
+    assert.match(await page.locator('.trace-block').allInnerTexts().then(items => items.join('\n')), /EVIDENCE_EXPLANATION/)
     const answer = await page.locator('.message-row.assistant').last().innerText()
     assert.match(answer, /training_db|train_v3/)
     const response = await fetch(`http://127.0.0.1:8000/api/conversations/${conversationId}`, {

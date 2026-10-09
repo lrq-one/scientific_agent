@@ -10,6 +10,7 @@ from typing import Any, Sequence
 
 from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
+from langchain.agents.middleware import wrap_tool_call
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
@@ -100,8 +101,22 @@ class DeepAgentRuntime:
         user_id: str,
         thread_id: str,
         selected_skills: list[str],
+        plan_step: dict[str, Any] | None = None,
+        allowed_tool_scope: set[str] | None = None,
+        budget: int = 2,
+        tool_executor=None,
     ) -> dict[str, Any]:
         calls: list[dict[str, Any]] = []
+        scope = allowed_tool_scope if allowed_tool_scope is not None else {"get_molecule_features"}
+        permitted_ids = {item.upper() for item in re.findall(r"\b[MT]\d{3,}\b", goal, flags=re.I)}
+
+        @wrap_tool_call
+        def enforce_subtask_scope(request, handler):
+            if request.tool_call["name"] not in {"register_runtime_context", *scope}:
+                raise PermissionError("sub-agent tool scope violation")
+            if len(calls) >= min(budget, 2):
+                raise RuntimeError("sub-agent tool budget exhausted")
+            return handler(request)
 
         @tool
         def register_runtime_context(goal: str) -> str:
@@ -113,7 +128,12 @@ class DeepAgentRuntime:
         @tool
         def get_molecule_features(molecule_id: str) -> str:
             """Call the registered scientific MCP server for molecule metadata when available."""
-            result = asyncio.run(self.mcp.call("get_molecule_features", {"molecule_id": molecule_id}))
+            if "get_molecule_features" not in scope or molecule_id.upper() not in permitted_ids:
+                raise PermissionError("sub-agent molecule/tool scope violation")
+            if sum(item["tool"] == "mcp:get_molecule_features" for item in calls) >= min(budget, 2):
+                raise RuntimeError("sub-agent tool budget exhausted")
+            operation = tool_executor or self.mcp.call
+            result = asyncio.run(operation("get_molecule_features", {"molecule_id": molecule_id}))
             calls.append({
                 "tool": "mcp:get_molecule_features",
                 "molecule_id": molecule_id,
@@ -136,6 +156,7 @@ class DeepAgentRuntime:
         graph = create_deep_agent(
             model=self._model(),
             tools=[register_runtime_context, get_molecule_features],
+            middleware=[enforce_subtask_scope],
             system_prompt=(
                 "You are the bounded DeepAgents sub-agent for a scientific analysis agent. "
                 "Execute only the bounded sub-task with registered tools and loaded skills. Do not fabricate evidence or expose chain-of-thought."
@@ -154,6 +175,9 @@ class DeepAgentRuntime:
         return {
             "runtime": "deepagents.create_deep_agent",
             "role": "bounded_subagent",
+            "plan_step": plan_step,
+            "allowed_tool_scope": sorted(scope),
+            "budget": min(budget, 2),
             "tools": [register_runtime_context.name, get_molecule_features.name],
             "skills": selected_skills,
             "skill_paths": skill_paths,

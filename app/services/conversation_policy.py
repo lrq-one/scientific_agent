@@ -12,6 +12,8 @@ InteractionType = Literal[
     "DELEGATE",
     "DIRECT_ANSWER",
     "CAPABILITY_QUESTION",
+    "IDENTITY_QUESTION",
+    "SECURITY_REFUSAL",
     "CLARIFY",
     "UNSUPPORTED",
     "CANCEL_ACTIVE",
@@ -36,8 +38,9 @@ class ConversationPolicy:
     """
 
     GREETING = re.compile(r"^(你好|您好|嗨|hello|hi|hey|谢谢|感谢|thanks)[！!。.]?$", re.I)
+    IDENTITY = re.compile(r"你(?:是谁|是什么\s*agent|是什么代理)|这是(?:什么|干什么)|who are you", re.I)
     CAPABILITY = re.compile(
-        r"(你能(?:做|分析|处理|支持)|你会(?:做|分析|处理)|支持(?:什么|哪些|csv|excel|数据库|sql|质谱|mcp)|"
+        r"(你能(?:做|干|分析|处理|支持)|你会(?:做|分析|处理)|支持(?:什么|哪些|csv|excel|数据库|sql|质谱|mcp)|能查数据库|"
         r"能不能(?:分析|处理)|有哪些功能|可以(?:分析|处理).{0,20}(?:吗|么))",
         re.I,
     )
@@ -53,7 +56,7 @@ class ConversationPolicy:
         re.I,
     )
     CONTEXT_SIGNAL = re.compile(
-        r"(刚才|上一轮|上次|前面|这个结果|这些结果|这个结论|这些证据|它|那换|继续|重跑|重新|证据|依据)",
+        r"(刚才|上一轮|上次|前面|这个结果|这些结果|这个结论|这些证据|它|那换|继续|重跑|重新|重试|证据|依据|错误|失败|alias|原始|rows|数字哪里|用了什么数据)",
         re.I,
     )
     VAGUE_ANALYSIS = re.compile(r"^(帮我|请)?(?:分析|看看|查一下|处理一下)(?:这个|一下)?[？?。.]?$", re.I)
@@ -74,13 +77,22 @@ class ConversationPolicy:
             capabilities.append("MCP 科研工具调用")
         if getattr(resources, "available_scientific_models", []):
             capabilities.append("已配置科研模型推理")
-        capabilities.extend(["多轮证据追溯", "HITL/Checkpoint 恢复", "结果表格/图表产物"])
+        capabilities.extend(["多轮证据追溯", "HITL/Checkpoint 恢复"])
+        if getattr(resources, "available_artifact_formats", []):
+            capabilities.append("CSV/XLSX/PNG 产物生成与下载")
         model_note = (
             "当前检测到可用科研模型。"
             if getattr(resources, "available_scientific_models", [])
             else "当前没有可验证的真实科研模型权重，因此不会伪造模型推理结果。"
         )
         return "目前可处理：" + "、".join(capabilities) + "。\n\n" + model_note
+
+    def answer_for(self, decision: InteractionDecision, resources) -> str:
+        if decision.interaction_type == "IDENTITY_QUESTION":
+            return "我是 Scientific Research Analysis Agent，用于科研文件、数据库和科研工作流分析，并提供可追溯的证据、结果解释和分析产物。"
+        if decision.interaction_type == "CAPABILITY_QUESTION":
+            return self.capability_answer(resources)
+        return decision.direct_answer or "请把问题或希望执行的科研任务描述得更具体一些。"
 
     def deterministic(self, query: str, *, has_context: bool, active_task: bool, resources) -> InteractionDecision | None:
         text = " ".join(query.strip().split())
@@ -101,6 +113,11 @@ class ConversationPolicy:
                 reason="greeting",
                 direct_answer="你好。你可以直接描述科研问题，或上传 CSV/Excel、选择数据库后让我分析。",
             )
+        if self.IDENTITY.search(text):
+            return InteractionDecision(interaction_type="IDENTITY_QUESTION", reason="identity question")
+        if re.fullmatch(r"(?:请解释)?什么是过拟合[？?。.]?", text):
+            return InteractionDecision(interaction_type="DIRECT_ANSWER", reason="stable conceptual question",
+                direct_answer="过拟合是模型把训练数据中的噪声或偶然规律也学进去，导致训练集表现很好，但在未见数据上表现变差。可通过独立验证集、交叉验证、正则化和降低模型复杂度来识别和缓解。")
         if self.CAPABILITY.search(text):
             return InteractionDecision(
                 interaction_type="CAPABILITY_QUESTION",
@@ -119,6 +136,8 @@ class ConversationPolicy:
                 reason="analysis request lacks target/resource",
                 direct_answer="可以。请说明要分析的对象，例如文件名、数据库/数据集版本、模型结果，或你想回答的具体科研问题。",
             )
+        if has_context and re.search(r"只输出|不要画图|不要图|换成|换\s*train|只看|只比较", text, re.I):
+            return InteractionDecision(interaction_type="DELEGATE", reason="explicit previous-task refinement")
         if self.CONTEXT_SIGNAL.search(text) and has_context:
             return InteractionDecision(interaction_type="DELEGATE", reason="conversation-context turn")
         if self.TASK_SIGNAL.search(text):
@@ -142,68 +161,9 @@ class ConversationPolicy:
         )
 
     async def resolve_async(self, query: str, *, has_context: bool, active_task: bool, resources) -> InteractionDecision:
-        deterministic = self.deterministic(
-            query,
-            has_context=has_context,
-            active_task=active_task,
-            resources=resources,
-        )
-        if deterministic is not None:
-            return deterministic
-
-        llm = self._configured_llm()
-        if llm is None:
-            return InteractionDecision(
-                interaction_type="DIRECT_ANSWER",
-                reason="LLM unavailable; safe non-tool response",
-                direct_answer=(
-                    "我理解这是一个不需要当前科研工具链直接执行的问题，但目前没有可用 LLM 来生成可靠回答。"
-                    "如果你希望执行文件、数据库或科研分析，请把目标和数据来源说具体一些。"
-                ),
-                source="deterministic_fallback",
-                confidence=0.5,
-            )
-
-        prompt = f"""
-You are the conversation policy layer of a Scientific Agent.
-Decide whether this user turn should enter the scientific execution workflow.
-
-Allowed interaction_type:
-- DELEGATE: a scientific task or context-dependent follow-up that should go to the existing follow-up/task router.
-- DIRECT_ANSWER: ordinary conversation or stable conceptual explanation that needs no tools.
-- CAPABILITY_QUESTION: asks what this system can do.
-- CLARIFY: cannot safely know what object/resource/task the user means.
-- UNSUPPORTED: requires a live/external capability the system does not have.
-- CANCEL_ACTIVE: only when the user explicitly asks to stop an active task.
-
-Important rules:
-1. Do NOT choose DELEGATE merely because database/file capabilities exist.
-2. Questions such as "what is overfitting?" are DIRECT_ANSWER.
-3. Questions such as "why did you say that just now?" with conversation context are DELEGATE.
-4. If a direct answer would require current live external data, choose UNSUPPORTED.
-5. For DIRECT_ANSWER/UNSUPPORTED/CLARIFY, provide a concise Chinese direct_answer.
-6. Do not invent results from files, databases, tools, or previous tasks.
-
-User query: {query}
-Has previous analysis context: {has_context}
-Has active task: {active_task}
-Available files: {getattr(resources, "available_files", [])}
-Authorized datasources: {getattr(resources, "authorized_datasources", [])}
-Available scientific models: {getattr(resources, "available_scientific_models", [])}
-Available MCP tools: {getattr(resources, "available_mcp_tools", [])}
-""".strip()
-        try:
-            decision = await llm.with_structured_output(InteractionDecision).ainvoke(prompt)
-            decision.source = "llm_structured_policy"
-            return decision
-        except Exception as exc:
-            return InteractionDecision(
-                interaction_type="DIRECT_ANSWER",
-                reason=f"policy LLM failed: {type(exc).__name__}",
-                direct_answer="这个问题不需要我调用科研工具。当前语义判断服务暂时不可用，请稍后重试或把问题描述得更具体。",
-                source="safe_fallback",
-                confidence=0.0,
-            )
-
-
+        # Only the explicit lifecycle command is a shortcut. Ordinary semantics
+        # belong to the bounded follow-up resolver and the main Decision Node.
+        if active_task and self.CANCEL.fullmatch(query.strip()):
+            return InteractionDecision(interaction_type="CANCEL_ACTIVE", reason="explicit cancellation")
+        return InteractionDecision(interaction_type="DELEGATE", reason="LLM decision control plane")
 conversation_policy = ConversationPolicy()

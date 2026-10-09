@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from time import perf_counter
 from typing import Any
 
@@ -17,7 +18,45 @@ class StageSelection(BaseModel):
 
 
 class PlanningPolicy:
-    """Select only from validated executable stages; never invent a new executor."""
+    """Validate free LLM plans. Legacy stage selection is compatibility-only."""
+
+    @staticmethod
+    def validate_plan(plan, allowed_tools: set[str], capabilities: set[str], tool_capabilities=None):
+        if not plan or len(plan) > 16:
+            raise ValueError("plan must contain 1..16 steps")
+        ids = [step.step_id for step in plan]
+        if len(set(ids)) != len(ids) or any(not item for item in ids):
+            raise ValueError("plan step IDs must be nonempty and unique")
+        by_id = {step.step_id: step for step in plan}
+        visiting, visited = set(), set()
+        def visit(step_id):
+            if step_id in visiting:
+                raise ValueError("cyclic plan dependencies")
+            if step_id in visited:
+                return
+            visiting.add(step_id)
+            step = by_id[step_id]
+            if not set(step.selected_tools or step.preferred_tools) <= allowed_tools:
+                invalid = set(step.selected_tools or step.preferred_tools) - allowed_tools
+                raise ValueError(f"invalid tool identifiers {sorted(invalid)}; exact allowed names={sorted(allowed_tools)}")
+            if not {cap.value for cap in step.required_capabilities} <= capabilities:
+                raise ValueError("plan references unavailable capabilities")
+            if tool_capabilities is not None:
+                required = {tool_capabilities[t] for t in (step.selected_tools or step.preferred_tools)}
+                declared = {c.value for c in step.required_capabilities}
+                if not required <= declared:
+                    raise ValueError(f"step {step_id}: tool capability mismatch; required={sorted(required)}, declared={sorted(declared)}")
+            if step.completion_condition and not set(step.completion_condition.required_tools) <= set(step.selected_tools or step.preferred_tools):
+                raise ValueError("completion condition references tools outside step scope")
+            for dependency in step.depends_on:
+                if dependency not in by_id:
+                    raise ValueError(f"unknown dependency {dependency!r}; exact step IDs={list(by_id)}")
+                visit(dependency)
+            visiting.remove(step_id)
+            visited.add(step_id)
+        for step_id in ids:
+            visit(step_id)
+        return plan
 
     def __init__(self, llm: Any | None = None):
         self.llm = llm
@@ -50,6 +89,8 @@ class PlanningPolicy:
         if task_type == "mixed_analysis" and any(
             token in goal for token in ("molecule_id", "关联", "核对", "一致", "对应", "join", "reconcile")
         ):
+            stages.add("cross-resource-reconcile")
+        if task_type == "mixed_analysis" and re.search(r"train[_-]?v\d+", goal):
             stages.add("cross-resource-reconcile")
         return sorted(stages)
 

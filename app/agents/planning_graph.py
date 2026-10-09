@@ -14,6 +14,23 @@ class PlanningState(TypedDict, total=False):
 
 
 def canonical_plan(intent: dict[str, Any]) -> list[dict[str, Any]]:
+    plan = _canonical_plan(intent)
+    goal = intent.get("goal", "").lower()
+    outputs = []
+    if any(word in goal for word in ("导出", "保存", "结果表", "表格", "export", "save", "table")):
+        outputs.append("save_result_table")
+    if any(word in goal for word in ("画图", "图表", "可视化", "png", "chart", "plot")) and not any(
+        word in goal for word in ("不要画图", "不画图", "无需图", "no chart")
+    ):
+        outputs.append("plot_metric_comparison")
+    for step in plan:
+        if step["step_id"] in {"file-comparison", "execute"} and "file" in step.get("required_capabilities", []):
+            for key in ("preferred_tools", "selected_tools"):
+                step[key] = list(dict.fromkeys([*step[key], *outputs]))
+    return plan
+
+
+def _canonical_plan(intent: dict[str, Any]) -> list[dict[str, Any]]:
     task_type = intent["task_type"]
     complexity = intent.get("complexity", "simple")
     if task_type == "mixed_analysis":
@@ -107,9 +124,11 @@ def canonical_plan(intent: dict[str, Any]) -> list[dict[str, Any]]:
             },
         ]
     tools = {
-        "file_analysis": ["inspect_table", "calculate_metrics", "group_metrics"],
+        "file_analysis": ["inspect_table", "read_csv", "read_excel", "profile_dataset", "calculate_metrics", "group_metrics", "find_high_error_samples", "filter_samples", "join_tables"],
         "scientific_model": ["predict_rt"],
     }.get(task_type, [])
+    if "mcp" in intent.get("required_capabilities", []):
+        tools.append("get_molecule_features")
     return [
         {
             "step_id": "execute",
@@ -163,3 +182,27 @@ def build_planning_graph(checkpointer=None):
     builder.add_edge(START, "create_plan")
     builder.add_edge("create_plan", END)
     return builder.compile(checkpointer=checkpointer or InMemorySaver())
+
+
+class AgentGraphState(TypedDict):
+    # One persisted canonical ScientificAgentState, not a second domain model.
+    agent: dict[str, Any]
+
+
+def build_agent_graph(runtime, checkpointer):
+    builder = StateGraph(AgentGraphState)
+    for name in ("build_context", "decision", "execute_tool", "observation", "update_plan", "ask_user", "finalize", "refuse"):
+        builder.add_node(name, getattr(runtime, name))
+    builder.add_edge(START, "build_context")
+    builder.add_edge("build_context", "decision")
+    builder.add_conditional_edges("decision", lambda state: state["agent"]["decision"]["action"] if state["agent"].get("decision_valid", True) else "RETRY", {
+        "RETRY": "decision",
+        "CALL_TOOL": "execute_tool", "REPLAN": "update_plan", "ASK_USER": "ask_user",
+        "ANSWER": "finalize", "FINISH": "finalize", "REFUSE": "refuse",
+    })
+    builder.add_edge("execute_tool", "observation")
+    for name in ("observation", "update_plan", "ask_user"):
+        builder.add_edge(name, "decision")
+    builder.add_edge("finalize", END)
+    builder.add_edge("refuse", END)
+    return builder.compile(checkpointer=checkpointer)

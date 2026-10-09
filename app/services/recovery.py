@@ -12,7 +12,7 @@ from app.tools.sql_guard import SQLGuardError
 
 FailureKind = Literal[
     "invalid_arguments", "schema_mismatch", "timeout", "rate_limit",
-    "permission_denied", "tool_unavailable", "empty_result", "non_retryable_error",
+    "permission_denied", "tool_unavailable", "empty_result", "non_retryable_error", "resource_not_found", "artifact_failure",
 ]
 Action = Literal["retry", "alternative_tool", "replan", "hitl", "fail_safely"]
 
@@ -26,6 +26,10 @@ class RecoveryDecision(BaseModel):
 
 def classify_failure(error: Exception | str, *, tool: str) -> RecoveryDecision:
     text = str(error).lower()
+    if isinstance(error, FileNotFoundError) or "resource not found" in text:
+        return RecoveryDecision(failure_kind="resource_not_found", action="hitl", reason="requested resource is missing")
+    if tool in {"save_chart", "save_result_table", "plot_metric_comparison"}:
+        return RecoveryDecision(failure_kind="artifact_failure", action="fail_safely", reason="artifact generation failed; retain verified evidence")
     sqlstate = getattr(error, "sqlstate", None)
     if isinstance(error, SQLGuardError) and "table not authorized" in text and tool == "query_checker":
         return RecoveryDecision(failure_kind="schema_mismatch", action="replan", reason=str(error))
@@ -37,7 +41,7 @@ def classify_failure(error: Exception | str, *, tool: str) -> RecoveryDecision:
         )
     if sqlstate in {"42501"} or any(token in text for token in ("permission denied", "not authorized", "forbidden")):
         return RecoveryDecision(failure_kind="permission_denied", action="fail_safely", reason=str(error))
-    if sqlstate in {"42703", "42P01"} or any(token in text for token in ("column", "alias", "does not exist", "unknown table")):
+    if sqlstate in {"42703", "42P01"} or any(token in text for token in ("column", "alias", "does not exist", "unknown table", "join relationship")):
         return RecoveryDecision(failure_kind="schema_mismatch", action="replan", reason=str(error))
     if sqlstate in {"57014"} or any(token in text for token in ("timed out", "timeout")):
         return RecoveryDecision(failure_kind="timeout", action="retry", reason=str(error), max_attempts=2)
