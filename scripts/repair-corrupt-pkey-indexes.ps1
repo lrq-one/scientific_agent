@@ -4,7 +4,7 @@
 #   .\scripts\repair-corrupt-pkey-indexes.ps1           # inspect only
 #   .\scripts\stop-dev.ps1 -KeepDocker
 #   .\scripts\repair-corrupt-pkey-indexes.ps1 -Apply    # cold snapshot first, REINDEX only with consent
-param([switch]$Apply)
+param([switch]$Apply, [switch]$BackupOnly)
 
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -25,7 +25,7 @@ FROM (VALUES (16391), (16398), (16412), (16414), (16424)) x(filenode)
 LEFT JOIN pg_class c ON c.oid = pg_filenode_relation(0, x.filenode);
 '@
 
-if (-not $Apply) {
+if (-not $Apply -and -not $BackupOnly) {
     Write-Host 'Inspection only: no data, image or index changes.' -ForegroundColor Cyan
     Invoke-Docker @('compose','exec','-T','postgres','psql',
         '-U','scientific','-d','scientific_agent','-X','-v','ON_ERROR_STOP=1',
@@ -68,8 +68,11 @@ $DBMounts = @($MountsJSON | ConvertFrom-Json | Where-Object {
 if ($DBMounts.Count -ne 1 -or -not $DBMounts[0].Name) {
     throw 'Expected one PostgreSQL named volume at /var/lib/postgresql/data; aborting.'
 }
-$VolumeName = [string]$DBMounts[0].Name
-$Image = [string](docker inspect --format '{{.Config.Image}}' $ContainerID)
+$VolumeName = ([string]($DBMounts[0].Name)).Trim()
+if ($VolumeName -cne 'scientific_agent_postgres_data') {
+    throw "Unexpected data volume name '$VolumeName'; stopping without backup or repair."
+}
+$Image = ([string](docker inspect --format '{{.Config.Image}}' $ContainerID)).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $Image -or $Image -notmatch '^postgres:16') {
     throw 'Expected existing PostgreSQL 16 image; aborting.'
 }
@@ -107,6 +110,10 @@ $Hash = (Get-FileHash -Path $ArchivePath -Algorithm SHA256).Hash
 Write-Host "Cold backup: $ArchivePath"
 Write-Host "SHA256: $Hash"
 Write-Warning 'The archive is verified as a readable TAR, NOT as a healthy PostgreSQL database. Keep it unchanged.'
+if ($BackupOnly) {
+    Write-Host 'Cold snapshot saved; PostgreSQL remains STOPPED. No REINDEX was performed.' -ForegroundColor Green
+    return
+}
 
 Write-Host '[3/5] Restart same existing PostgreSQL container; verify index identity' -ForegroundColor Cyan
 Invoke-Docker @('compose','up','-d','--no-recreate','postgres')
