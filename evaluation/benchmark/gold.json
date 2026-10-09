@@ -1,0 +1,8 @@
+{
+  "schema_version": "scientific-agent-benchmark-v1",
+  "frozen_at": "2026-10-10",
+  "source_head": "209fda8ecc15f130260b28af3e0dfdeb5fe6f9b4",
+  "gold_policy": "Labels are transcribed from committed isolated-integration acceptance evidence and existing human-checked suites; no model output is used as gold.",
+  "unknown_policy": "Unknown latency/token/call fields remain null and are excluded from aggregates.",
+  "cases_file": "cases.jsonl"
+}
