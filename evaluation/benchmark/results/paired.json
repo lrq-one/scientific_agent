@@ -1,0 +1,79 @@
+{
+  "schema_version": "scientific-agent-benchmark-paired-v1",
+  "baseline_run": "baseline-20261009T173316Z",
+  "candidate_run": "optimized_protocol_replay-20261009T173914Z",
+  "same_cases": true,
+  "rows": [
+    {
+      "metric": "avg_decision_calls",
+      "baseline": 2.8,
+      "candidate": 2.8,
+      "delta": 0.0,
+      "status": "measured"
+    },
+    {
+      "metric": "avg_invalid_tool_calls",
+      "baseline": 0,
+      "candidate": 0,
+      "delta": 0,
+      "status": "measured"
+    },
+    {
+      "metric": "avg_replans",
+      "baseline": 0.6,
+      "candidate": 0.6,
+      "delta": 0.0,
+      "status": "measured"
+    },
+    {
+      "metric": "avg_tokens",
+      "baseline": null,
+      "candidate": null,
+      "delta": null,
+      "status": "not_measured"
+    },
+    {
+      "metric": "avg_tool_calls",
+      "baseline": 5.2,
+      "candidate": 5.2,
+      "delta": 0.0,
+      "status": "measured"
+    },
+    {
+      "metric": "evidence_coverage",
+      "baseline": 1.0,
+      "candidate": 1.0,
+      "delta": 0.0,
+      "status": "measured"
+    },
+    {
+      "metric": "p95_latency_ms",
+      "baseline": null,
+      "candidate": null,
+      "delta": null,
+      "status": "not_measured"
+    },
+    {
+      "metric": "recovery_success_rate",
+      "baseline": 1.0,
+      "candidate": 1.0,
+      "delta": 0.0,
+      "status": "measured"
+    },
+    {
+      "metric": "task_success_rate",
+      "baseline": 1,
+      "candidate": 1,
+      "delta": 0,
+      "status": "measured"
+    },
+    {
+      "metric": "tool_success_rate",
+      "baseline": 1.0,
+      "candidate": 1.0,
+      "delta": 0.0,
+      "status": "measured"
+    }
+  ],
+  "interpretation": "A replay comparison is not a real-model improvement claim; causal attribution requires an actual paired optimized run."
+}

@@ -1,0 +1,83 @@
+{
+  "schema_version": "scientific-agent-benchmark-v1",
+  "run_id": "optimized_protocol_replay-20261009T173914Z",
+  "label": "optimized_protocol_replay",
+  "git_sha": "11fcaedd877ae2acad058d4bdc0da61ab286da71",
+  "environment": "offline_replay",
+  "model": "not_measured",
+  "source_trace": "D:\\工作\\scientific_agent\\evaluation\\benchmark\\traces.baseline.jsonl",
+  "case_count": 10,
+  "metrics": {
+    "task_success_rate": 1,
+    "evidence_coverage": 1.0,
+    "tool_success_rate": 1.0,
+    "recovery_success_rate": 1.0,
+    "avg_tool_calls": 5.2,
+    "avg_decision_calls": 2.8,
+    "avg_replans": 0.6,
+    "avg_invalid_tool_calls": 0,
+    "avg_tokens": null,
+    "p95_latency_ms": null
+  },
+  "skill_routing": {
+    "macro_f1": 1.0,
+    "exact_set_match": 1.0
+  },
+  "case_results": [
+    {
+      "case_id": "A",
+      "task_success": true,
+      "source": "docs/audit/final-integration-d09-m02-d08.md"
+    },
+    {
+      "case_id": "B",
+      "task_success": true,
+      "source": "docs/audit/final-integration-d09-m02-d08.md"
+    },
+    {
+      "case_id": "C",
+      "task_success": true,
+      "source": "docs/audit/final-integration-d09-m02-d08.md"
+    },
+    {
+      "case_id": "D06",
+      "task_success": true,
+      "source": "docs/audit/final-integration-d09-m02-d08.md"
+    },
+    {
+      "case_id": "D09",
+      "task_success": true,
+      "source": "docs/audit/final-integration-d09-m02-d08.md"
+    },
+    {
+      "case_id": "M02",
+      "task_success": true,
+      "source": "docs/audit/final-integration-d09-m02-d08.md"
+    },
+    {
+      "case_id": "D08",
+      "task_success": true,
+      "source": "docs/audit/final-integration-d09-m02-d08.md"
+    },
+    {
+      "case_id": "HITL",
+      "task_success": true,
+      "source": "tests/test_hitl_resume.py"
+    },
+    {
+      "case_id": "RERUN",
+      "task_success": true,
+      "source": "tests/test_p1_langgraph_integration.py"
+    },
+    {
+      "case_id": "CANCEL",
+      "task_success": true,
+      "source": "docs/audit/cancellation-consistency.md"
+    }
+  ],
+  "limitations": [
+    "Replay contains only committed acceptance facts.",
+    "Token and latency are not_measured where traces did not persist them.",
+    "No real Qwen request was made."
+  ]
+}
