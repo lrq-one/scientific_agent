@@ -38,6 +38,13 @@ SCIENTIFIC_AGENT_TEST_PROFILE = os.getenv("SCIENTIFIC_AGENT_TEST_PROFILE", "").s
 if SCIENTIFIC_AGENT_TEST_PROFILE not in {"offline", "integration_isolated"}:
     _load_env_file(ROOT / ".env")
 
+# Install a deny-by-default HTTP transport guard once.  It is inert for normal
+# development/production profiles and becomes active dynamically when a test
+# process selects offline or integration_isolated.  This protects direct
+# provider construction as well as the normal factory paths.
+from app.services.model_network_guard import install_model_network_guard
+install_model_network_guard()
+
 WORKSPACE_ROOT = ROOT / "workspace"
 DEMO_DATA = ROOT / "data" / "demo"
 SKILLS_ROOT = ROOT / "skills"
