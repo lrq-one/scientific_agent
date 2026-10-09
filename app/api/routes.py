@@ -37,7 +37,7 @@ from app.services.runtime_health import runtime_readiness
 from app.services.workspace import WorkspaceError, WorkspaceService
 from app.services.object_storage import ObjectStorageService
 from app.services.grounded_response import GroundedResponseService, GroundedResponseValidationError
-from app.services.task_completion import scientific_task_status
+from app.services.task_completion import scientific_task_status, RUNTIME_PROTOCOL_VERSION
 from app.services.evaluation_variant import VARIANT
 
 
@@ -147,6 +147,7 @@ def health():
     return {
         "status": "ok",
         "service": "Scientific Research Analysis Agent",
+        "runtime_protocol_version": RUNTIME_PROTOCOL_VERSION,
     }
 
 
