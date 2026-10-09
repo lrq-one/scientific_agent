@@ -77,8 +77,8 @@ def _requested_dimensions(state) -> list[str]:
 def _explicit_csv_export_requested(question: str) -> bool:
     """Check the user's literal deliverable, not an LLM-authored Plan hint."""
     return any(re.search(pattern, question, re.I) for pattern in (
-        r"(?:导出|生成|保存|输出|下载|写入|export|download|save)[^。！？\\n]{0,50}csv",
-        r"csv[^。！？\\n]{0,30}(?:文件|导出|生成|保存|下载|file|export|download)",
+        r"(?:导出|生成|保存|输出|下载|写入|export|download|save)[^。！？\n]{0,50}csv",
+        r"csv[^。！？\n]{0,30}(?:文件|导出|生成|保存|下载|file|export|download)",
     ))
 
 
