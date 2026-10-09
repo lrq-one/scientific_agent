@@ -54,7 +54,7 @@ def test_wire_tool_choices_obey_plan_scope_and_observed_dependencies():
               PlanStep(step_id="query", goal="generate", selected_tools=["text_to_sql"], depends_on=["schema"]),
               PlanStep(step_id="execute", goal="execute", selected_tools=["execute_readonly_sql"], depends_on=["query"])])
     assert eligible_call_tools(state) == ["search_schema"]
-    state.plan[0].observations.append({"success": True})
+    state.plan[0].observations.append({"tool": "search_schema", "success": True})
     assert eligible_call_tools(state) == ["search_schema"]
     state.schema_cache={"molecules":[{"name":"id","type":"uuid"}]}
     assert eligible_call_tools(state) == ["search_schema", "text_to_sql"]
@@ -138,7 +138,7 @@ async def test_wire_completion_ids_only_allow_observed_steps(monkeypatch):
     monkeypatch.setattr("app.agents.decision_node.configured_llm", lambda **kwargs: Model())
     pending = PlanStep(step_id="unstarted", goal="read", selected_tools=["read_csv"])
     observed = PlanStep(step_id="observed", goal="read", selected_tools=["read_csv"],
-        status="running", observations=[{"tool_call_id": "tool-1", "success": True}])
+        status="running", observations=[{"tool_call_id": "tool-1", "tool": "read_csv", "success": True}])
     await structured_call(AgentDecision, "test", {}, tool_names=["read_csv"], plan=[pending, observed])
     properties = contracts[-1]["properties"]
     assert properties["completed_step_ids"]["items"]["enum"] == ["observed"]
@@ -158,7 +158,7 @@ def test_call_tool_echoed_plan_does_not_erase_observations():
             tool_calls=[{"tool_call_id": "tool-1", "tool": "inspect_table", "success": True}],
             observations=[ToolResult(success=True, data={"columns": ["observed_rt", "predicted_rt"]})],
             plan=[PlanStep(step_id="inspect", goal="inspect", selected_tools=["inspect_table"], status="running",
-                           observations=[{"tool_call_id": "tool-1", "success": True}]),
+                           observations=[{"tool_call_id": "tool-1", "tool": "inspect_table", "success": True}]),
                   PlanStep(step_id="measure", goal="measure", selected_tools=["calculate_metrics"], depends_on=["inspect"])])
         async def decide(*_):
             return AgentDecision(action="CALL_TOOL", tool_name="calculate_metrics", step_id="measure",
