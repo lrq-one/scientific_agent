@@ -84,7 +84,10 @@ class DeepAgentRuntime:
         # DeepAgents is a bounded sub-runtime for skill loading and explicit MCP
         # enrichment. LangGraph remains the task lifecycle authority. Keep this
         # deterministic by default so the sub-runtime cannot block the main plan.
-        if settings.configured and os.getenv("DEEP_RUNTIME_LLM") == "1":
+        # The bounded sub-runtime is not part of the paired live benchmark;
+        # keep it deterministic in live mode so an uninstrumented nested
+        # provider call can never bypass the global request ledger.
+        if settings.configured and os.getenv("DEEP_RUNTIME_LLM") == "1" and os.getenv("SCIENTIFIC_AGENT_LIVE_LLM") != "1":
             from langchain_openai import ChatOpenAI
 
             return ChatOpenAI(

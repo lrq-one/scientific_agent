@@ -28,8 +28,9 @@ def configured_llm(*, tokens: int = 2400):
     if not settings.configured:
         raise RuntimeError("LLM is unavailable; no heuristic action will be executed")
     from langchain_openai import ChatOpenAI
+    from app.services.live_budget import live_max_retries
     return ChatOpenAI(model=settings.model, api_key=settings.api_key, base_url=settings.api_base,
-                      temperature=0, max_tokens=tokens, timeout=35, max_retries=1,
+                      temperature=0, max_tokens=tokens, timeout=35, max_retries=live_max_retries(1),
                       extra_body={"enable_thinking": False} if settings.model.startswith("qwen") else None)
 
 
@@ -90,6 +91,8 @@ async def structured_call(schema, system: str, payload: dict[str, Any], *, tool_
     from langchain_core.messages import HumanMessage, SystemMessage
     collector = UsageCollector()
     started = perf_counter()
+    from app.services.live_budget import record_live_call, reserve_live_call
+    reserve_live_call("structured_call", max(1, (len(system) + len(json.dumps(payload, ensure_ascii=False, default=str))) // 4 + 2400))
     output_schema = schema
     if tool_names is not None:
         # Encode authorized names into the output contract itself, not merely
@@ -141,6 +144,7 @@ async def structured_call(schema, system: str, payload: dict[str, Any], *, tool_
             content = completion.choices[0].message.content or ""
             logging.getLogger(__name__).warning("Structured output rejected: %s; public JSON length=%s prefix=%s suffix=%s",
                 type(exc).__name__, len(content), content[:900], content[-400:])
+        record_live_call("structured_call", collector.snapshot(), latency_ms=(perf_counter() - started) * 1000, error=type(exc).__name__)
         raise
     if isinstance(result, dict):
         result = schema.model_validate(result)
@@ -151,8 +155,10 @@ async def structured_call(schema, system: str, payload: dict[str, Any], *, tool_
         for step in result.plan:
             step.required_capabilities = [Capability(c) for c in sorted({tool_capabilities[t]
                 for t in step.selected_tools if t in tool_capabilities})]
-    return result, {"llm_called": True, "fallback": False, "model_configured": llm_settings().model,
-                    "latency_ms": round((perf_counter()-started)*1000, 2), **collector.snapshot()}
+    telemetry = {"llm_called": True, "fallback": False, "model_configured": llm_settings().model,
+                 "latency_ms": round((perf_counter()-started)*1000, 2), **collector.snapshot()}
+    record_live_call("structured_call", collector.snapshot(), latency_ms=(perf_counter() - started) * 1000)
+    return result, telemetry
 
 
 class DecisionNode:

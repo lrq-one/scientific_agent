@@ -1,0 +1,93 @@
+{
+  "limits": {
+    "max_requests": 40,
+    "max_tokens": 250000,
+    "max_cost_usd": 5.0,
+    "max_minutes": 20.0
+  },
+  "usage": {
+    "requests": 4,
+    "input_tokens": 8536,
+    "output_tokens": 793,
+    "total_tokens": 13149,
+    "reserved_tokens": 0,
+    "usage_measured": false,
+    "estimated_cost_usd": 0.0024085
+  },
+  "events": [
+    {
+      "event": "run_started",
+      "time": 1791570610.9765973,
+      "provider_host": "dashscope.aliyuncs.com",
+      "model": "qwen3.7-flash"
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791570610.9776018,
+      "stage": "planning",
+      "estimated_tokens": 1620
+    },
+    {
+      "event": "request_finished",
+      "time": 1791570614.8189092,
+      "stage": "planning",
+      "input_tokens": 289,
+      "output_tokens": 119,
+      "total_tokens": 408,
+      "charged_tokens": 408,
+      "latency_ms": 3840.88,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791570614.819906,
+      "stage": "text2sql",
+      "estimated_tokens": 3820
+    },
+    {
+      "event": "request_finished",
+      "time": 1791570619.3673859,
+      "stage": "text2sql",
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null,
+      "charged_tokens": 3820,
+      "latency_ms": 4546.61,
+      "error_type": "SQLScopeValidationError"
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791570619.3689983,
+      "stage": "decision",
+      "estimated_tokens": 5220
+    },
+    {
+      "event": "request_finished",
+      "time": 1791570623.8210762,
+      "stage": "decision",
+      "input_tokens": 5896,
+      "output_tokens": 519,
+      "total_tokens": 6415,
+      "charged_tokens": 6415,
+      "latency_ms": 4450.94,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791570623.822075,
+      "stage": "grounded_response",
+      "estimated_tokens": 5620
+    },
+    {
+      "event": "request_finished",
+      "time": 1791570626.4624317,
+      "stage": "grounded_response",
+      "input_tokens": 2351,
+      "output_tokens": 155,
+      "total_tokens": 2506,
+      "charged_tokens": 2506,
+      "latency_ms": 2640.0,
+      "error_type": null
+    }
+  ]
+}

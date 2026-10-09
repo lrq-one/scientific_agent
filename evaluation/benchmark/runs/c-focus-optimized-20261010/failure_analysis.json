@@ -1,0 +1,73 @@
+{
+  "failed_stages": [
+    {
+      "stage": "text2sql",
+      "success": false,
+      "latency_ms": 4159.43,
+      "error_type": "SQLScopeValidationError",
+      "error": "UNVERIFIED_SCOPE: outer/cross/implicit joins require population proof beyond this checker",
+      "diagnostic_candidate": {
+        "sql": "WITH train_coverage AS (SELECT tm.molecule_id, tm.structure_type FROM training_molecules tm WHERE tm.dataset_version = %(dataset_version)s AND tm.split = %(split)s) SELECT m.structure_type, COUNT(p.molecule_id) AS prediction_error_count, COUNT(tc.molecule_id) AS coverage_count FROM molecules m LEFT JOIN train_coverage tc ON m.molecule_id = tc.molecule_id LEFT JOIN predictions p ON m.molecule_id = p.molecule_id GROUP BY m.structure_type",
+        "params": {
+          "dataset_version": "train_v3",
+          "split": "train"
+        },
+        "reason": "The query joins the `molecules` table with a CTE representing the training coverage (`training_molecules` filtered by version and split) and the `predictions` table. It uses LEFT JOINs to ensure all structure types in the base population are included, even if they have zero errors or zero coverage. The grouping is performed on `structure_type` as requested. Parameters are used for dataset version and split to maintain scope safety.",
+        "query_scope": {
+          "dataset_id": null,
+          "dataset_version": "train_v3",
+          "dataset_version_id": null,
+          "version_identifier_type": "LABEL",
+          "split": "train",
+          "whole_dataset": false,
+          "entity": null,
+          "filters": {},
+          "grouping": [],
+          "aggregation": null,
+          "comparison_target": [],
+          "user_constraints": [],
+          "datasource_id": "training_db",
+          "all_versions": false,
+          "authorized_version_ids": [],
+          "authorized_version_labels": []
+        }
+      },
+      "query_scope": {
+        "dataset_id": null,
+        "dataset_version": "train_v3",
+        "dataset_version_id": null,
+        "version_identifier_type": "LABEL",
+        "split": "train",
+        "whole_dataset": false,
+        "entity": null,
+        "filters": {},
+        "grouping": [],
+        "aggregation": null,
+        "comparison_target": [],
+        "user_constraints": [],
+        "datasource_id": "training_db",
+        "all_versions": false,
+        "authorized_version_ids": [],
+        "authorized_version_labels": []
+      },
+      "scope_validation": {
+        "verified": false,
+        "status": "UNVERIFIED_SCOPE",
+        "failure_code": "UNVERIFIED_SCOPE",
+        "reason": "UNVERIFIED_SCOPE: outer/cross/implicit joins require population proof beyond this checker"
+      },
+      "recovery": {
+        "failed_stage": "sql_scope_validation",
+        "candidate_role": "diagnostic_only",
+        "failure_code": "UNVERIFIED_SCOPE",
+        "recovery_action": "targeted_sql_repair",
+        "retry_budget": 1,
+        "instruction": "The supplied QueryScope is unchanged. Repair the SQL predicate/lineage, or retrieve missing authorized schema; renaming a Plan or dropping scope does not repair SQL."
+      },
+      "sql_candidate_status": "diagnostic_only"
+    }
+  ],
+  "notes": [
+    "Provider errors are preserved as outcomes; no fallback metrics are fabricated."
+  ]
+}

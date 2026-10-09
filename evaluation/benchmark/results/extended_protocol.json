@@ -1,0 +1,391 @@
+{
+  "schema_version": "scientific-agent-offline-protocol-v1",
+  "case_count": 34,
+  "source": "D:\\工作\\scientific_agent\\evaluation\\benchmark\\cases_extended.jsonl",
+  "source_sha256": "895519b42e90dc4ae73c9f3b64accc3535468bebe6173c797e2d7f40c1d82b3a",
+  "measured": false,
+  "metric_policy": "not_measured; no model/database calls",
+  "validation": {
+    "invalid_cases": [],
+    "valid": true
+  },
+  "cases": [
+    {
+      "case_id": "A",
+      "family": "model_comparison",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "file_metrics",
+        "group_metrics"
+      ],
+      "source": "docs/audit/final-integration-d09-m02-d08.md"
+    },
+    {
+      "case_id": "B",
+      "family": "training_coverage",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "schema",
+        "sql_result",
+        "scope_validation"
+      ],
+      "source": "tests/test_p1_langgraph_integration.py"
+    },
+    {
+      "case_id": "C",
+      "family": "scope_recovery",
+      "expected_outcome": "bounded_failure_or_repair",
+      "measured": false,
+      "required_evidence": [
+        "diagnostic_failure",
+        "directed_repair",
+        "verified_sql"
+      ],
+      "source": "docs/audit/final-integration-d09-m02-d08.md"
+    },
+    {
+      "case_id": "D06",
+      "family": "model_comparison_artifact",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "file_metrics",
+        "artifact"
+      ],
+      "source": "docs/audit/final-integration-d09-m02-d08.md"
+    },
+    {
+      "case_id": "D09",
+      "family": "multi_population",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "population_a",
+        "population_b",
+        "distinct_scopes"
+      ],
+      "source": "docs/audit/final-integration-d09-m02-d08.md"
+    },
+    {
+      "case_id": "M02",
+      "family": "mixed_sources",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "file_evidence",
+        "database_evidence"
+      ],
+      "source": "docs/audit/final-integration-d09-m02-d08.md"
+    },
+    {
+      "case_id": "D08",
+      "family": "reproducibility",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "model_run",
+        "experiment",
+        "dataset_version",
+        "artifact"
+      ],
+      "source": "docs/audit/final-integration-d09-m02-d08.md"
+    },
+    {
+      "case_id": "HITL",
+      "family": "hitl_resume",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "checkpoint",
+        "user_answer",
+        "scoped_sql"
+      ],
+      "source": "tests/test_hitl_resume.py"
+    },
+    {
+      "case_id": "RERUN",
+      "family": "rerun_isolation",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "new_task_namespace",
+        "new_evidence"
+      ],
+      "source": "tests/test_p1_langgraph_integration.py"
+    },
+    {
+      "case_id": "CANCEL",
+      "family": "cancellation",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "cancelled_event",
+        "terminal_status",
+        "late_completion_rejected"
+      ],
+      "source": "docs/audit/cancellation-consistency.md"
+    },
+    {
+      "case_id": "EXT11",
+      "family": "file_profile",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "profile"
+      ],
+      "source": "app/tools/registry.py"
+    },
+    {
+      "case_id": "EXT12",
+      "family": "file_rows",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "schema",
+        "rows"
+      ],
+      "source": "app/tools/registry.py"
+    },
+    {
+      "case_id": "EXT13",
+      "family": "high_error",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "high_error_rows",
+        "preview_limit"
+      ],
+      "source": "app/tools/registry.py"
+    },
+    {
+      "case_id": "EXT14",
+      "family": "group_metrics",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "group_metrics",
+        "structure_type"
+      ],
+      "source": "app/tools/registry.py"
+    },
+    {
+      "case_id": "EXT15",
+      "family": "schema_search",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "schema_search"
+      ],
+      "source": "app/tools/registry.py"
+    },
+    {
+      "case_id": "EXT16",
+      "family": "schema_relationships",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "relationships"
+      ],
+      "source": "app/tools/registry.py"
+    },
+    {
+      "case_id": "EXT17",
+      "family": "sql_generation",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "sql_candidate",
+        "params"
+      ],
+      "source": "app/services/text2sql.py"
+    },
+    {
+      "case_id": "EXT18",
+      "family": "sql_scope_reject",
+      "expected_outcome": "safe_reject",
+      "measured": false,
+      "required_evidence": [
+        "scope_violation",
+        "diagnostic_candidate"
+      ],
+      "source": "app/services/query_scope.py"
+    },
+    {
+      "case_id": "EXT19",
+      "family": "sql_scope_unverified",
+      "expected_outcome": "bounded_failure",
+      "measured": false,
+      "required_evidence": [
+        "unverified_scope",
+        "directed_repair"
+      ],
+      "source": "app/services/query_scope.py"
+    },
+    {
+      "case_id": "EXT20",
+      "family": "invalid_tool",
+      "expected_outcome": "safe_reject",
+      "measured": false,
+      "required_evidence": [
+        "invalid_tool_call"
+      ],
+      "source": "app/tools/registry.py"
+    },
+    {
+      "case_id": "EXT21",
+      "family": "query_checker_precondition",
+      "expected_outcome": "safe_reject",
+      "measured": false,
+      "required_evidence": [
+        "precondition_block",
+        "diagnostic_only"
+      ],
+      "source": "app/agents/decision_node.py"
+    },
+    {
+      "case_id": "EXT22",
+      "family": "goal_contract",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "goal_contract",
+        "no_extra_obligation"
+      ],
+      "source": "app/models/schemas.py"
+    },
+    {
+      "case_id": "EXT23",
+      "family": "partial_evidence",
+      "expected_outcome": "partial",
+      "measured": false,
+      "required_evidence": [
+        "partial_status",
+        "missing_population"
+      ],
+      "source": "app/services/grounded_response.py"
+    },
+    {
+      "case_id": "EXT24",
+      "family": "no_data",
+      "expected_outcome": "partial",
+      "measured": false,
+      "required_evidence": [
+        "no_data",
+        "uncertainty"
+      ],
+      "source": "app/services/grounded_response.py"
+    },
+    {
+      "case_id": "EXT25",
+      "family": "synthetic_disclosure",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "synthetic_disclosure"
+      ],
+      "source": "app/services/grounded_response.py"
+    },
+    {
+      "case_id": "EXT26",
+      "family": "training_binding",
+      "expected_outcome": "partial",
+      "measured": false,
+      "required_evidence": [
+        "unverified_binding",
+        "separate_observations"
+      ],
+      "source": "app/services/grounded_response.py"
+    },
+    {
+      "case_id": "EXT27",
+      "family": "artifact_export",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "artifact",
+        "recorded_rows"
+      ],
+      "source": "app/agents/decision_node.py"
+    },
+    {
+      "case_id": "EXT28",
+      "family": "followup_provenance",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "sql",
+        "params",
+        "persisted_state"
+      ],
+      "source": "app/services/followup.py"
+    },
+    {
+      "case_id": "EXT29",
+      "family": "rerun_version",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "new_task_namespace",
+        "dataset_version"
+      ],
+      "source": "app/services/followup.py"
+    },
+    {
+      "case_id": "EXT30",
+      "family": "security",
+      "expected_outcome": "refuse",
+      "measured": false,
+      "required_evidence": [
+        "refusal",
+        "no_tool_execution"
+      ],
+      "source": "app/services/security_policy.py"
+    },
+    {
+      "case_id": "EXT31",
+      "family": "cancellation_race",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "cancelled_event",
+        "late_completion_rejected"
+      ],
+      "source": "docs/audit/cancellation-consistency.md"
+    },
+    {
+      "case_id": "EXT32",
+      "family": "ui_trace_projection",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "stage_projection",
+        "developer_trace"
+      ],
+      "source": "web/src/components/ExecutionTrace.jsx"
+    },
+    {
+      "case_id": "EXT33",
+      "family": "context_projection",
+      "expected_outcome": "success",
+      "measured": false,
+      "required_evidence": [
+        "projection_ledger",
+        "source_state_unchanged"
+      ],
+      "source": "app/services/context_projection.py"
+    },
+    {
+      "case_id": "EXT34",
+      "family": "budget_gate",
+      "expected_outcome": "safe_stop",
+      "measured": false,
+      "required_evidence": [
+        "budget_ledger",
+        "fail_closed"
+      ],
+      "source": "app/services/live_budget.py"
+    }
+  ]
+}

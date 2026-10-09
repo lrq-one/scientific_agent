@@ -1,0 +1,20 @@
+{
+  "case_count": 10,
+  "task_success_rate": 0.7,
+  "avg_decision_calls": 1.6,
+  "avg_replans": 0.0,
+  "avg_invalid_tool_calls": 0.0,
+  "p95_latency_ms": 22928.77,
+  "budget": {
+    "requests": 46,
+    "input_tokens": 106646,
+    "output_tokens": 6971,
+    "total_tokens": null,
+    "charged_tokens": 151772,
+    "usage_measured": false,
+    "estimated_cost_usd": 0.02767474,
+    "elapsed_seconds": 168.985
+  },
+  "execution_scope": "production generation stages only; no PostgreSQL/MinIO/SQL execution",
+  "outcome_rule": "Database cases require a successful scope-verified Text2SQL stage and a grounded response; response-only prose is not scientific task success."
+}

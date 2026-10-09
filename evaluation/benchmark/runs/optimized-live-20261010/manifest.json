@@ -1,0 +1,30 @@
+{
+  "schema_version": "scientific-agent-live-qwen-v1",
+  "label": "optimized-live",
+  "git_sha": "8e908aced7e39ac8cf31ff70e1f9cc957ebf621e",
+  "model": "qwen3.7-flash",
+  "provider_host": "dashscope.aliyuncs.com",
+  "case_ids": [
+    "A",
+    "B",
+    "C",
+    "D06",
+    "D09",
+    "M02",
+    "D08",
+    "HITL",
+    "RERUN",
+    "CANCEL"
+  ],
+  "ablation": "none",
+  "fixture_sha256": "cf17da06f529e821bfb2a20256f1ea8a48b345c623c67f837ba5a9eddc637538",
+  "limits": {
+    "max_requests": 80,
+    "max_tokens": 500000,
+    "max_cost_usd": 10.0,
+    "max_minutes": 40.0
+  },
+  "started_at": "2026-10-09T18:14:24.740528+00:00",
+  "real_model": true,
+  "api_key_recorded": false
+}

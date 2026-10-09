@@ -1,0 +1,29 @@
+{
+  "baseline": {
+    "requests": 46,
+    "input_tokens": 97256,
+    "output_tokens": 7602,
+    "total_tokens": 148628,
+    "reserved_tokens": 0,
+    "usage_measured": false,
+    "estimated_cost_usd": 0.02626231
+  },
+  "optimized": {
+    "requests": 46,
+    "input_tokens": 106646,
+    "output_tokens": 6971,
+    "total_tokens": 151772,
+    "reserved_tokens": 0,
+    "usage_measured": false,
+    "estimated_cost_usd": 0.02767474
+  },
+  "ablation_no_skill": {
+    "requests": 36,
+    "input_tokens": 90446,
+    "output_tokens": 5892,
+    "total_tokens": 134493,
+    "reserved_tokens": 0,
+    "usage_measured": false,
+    "estimated_cost_usd": 0.02345431
+  }
+}

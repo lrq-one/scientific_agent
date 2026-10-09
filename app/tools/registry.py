@@ -158,12 +158,13 @@ class ToolRegistry:
         settings = llm_settings()
         if llm is None and settings.configured:
             from langchain_openai import ChatOpenAI
+            from app.services.live_budget import live_max_retries
 
             llm = ChatOpenAI(
                 model=settings.model,
                 api_key=settings.api_key,
                 base_url=settings.api_base,
-                temperature=0,
+                temperature=0, max_retries=live_max_retries(1),
                 extra_body={"enable_thinking": False} if (settings.model or "").startswith("qwen") else None,
             )
         if llm is not None:
@@ -177,6 +178,8 @@ class ToolRegistry:
                 f"Candidates: {json.dumps([item.model_dump() for item in candidates], ensure_ascii=False)}"
             )
             started = perf_counter()
+            from app.services.live_budget import record_live_call, reserve_live_call
+            reserve_live_call("tool_routing", max(1, len(prompt) // 4 + 700))
             try:
                 choice = await llm.with_structured_output(ToolChoice).ainvoke(
                     prompt, config={"callbacks": [collector]}
@@ -188,11 +191,13 @@ class ToolRegistry:
                     "http_status": None,
                     **collector.snapshot(),
                 }
+                record_live_call("tool_routing", collector.snapshot(), latency_ms=(perf_counter() - started) * 1000)
                 valid, _ = self.validate_choice(choice)
                 if choice.tool in {item.name for item in candidates} and valid:
                     return choice, "llm_structured_selection", {**telemetry, "fallback": False}
                 telemetry = {**telemetry, "fallback": True, "invalid_choice": choice.model_dump()}
             except Exception as exc:
+                record_live_call("tool_routing", collector.snapshot(), latency_ms=(perf_counter() - started) * 1000, error=type(exc).__name__)
                 telemetry = {
                     "llm_called": True,
                     "fallback": True,

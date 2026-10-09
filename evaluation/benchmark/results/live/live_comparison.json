@@ -1,0 +1,363 @@
+{
+  "schema_version": "scientific-agent-live-qwen-comparison-v1",
+  "runs": {
+    "baseline": {
+      "label": "baseline-live",
+      "git_sha": "209fda8ecc15f130260b28af3e0dfdeb5fe6f9b4",
+      "ablation": "none",
+      "case_count": 10,
+      "metrics": {
+        "task_success_rate": 0.6,
+        "avg_decision_calls": 1.6,
+        "avg_replans": 0.0,
+        "avg_invalid_tool_calls": 0.0,
+        "p95_latency_ms": 21213.86
+      },
+      "provider_usage": {
+        "stage_calls": 46,
+        "measured_stage_calls": 42,
+        "coverage": 0.913,
+        "input_tokens": 104744,
+        "output_tokens": 11614,
+        "total_tokens": null
+      },
+      "budget": {
+        "requests": 46,
+        "input_tokens": 97256,
+        "output_tokens": 7602,
+        "total_tokens": null,
+        "charged_tokens": 148628,
+        "usage_measured": false,
+        "estimated_cost_usd": 0.02626231,
+        "elapsed_seconds": 165.125
+      },
+      "execution_scope": "production generation stages only; no PostgreSQL/MinIO/SQL execution"
+    },
+    "optimized": {
+      "label": "optimized-live",
+      "git_sha": "8e908aced7e39ac8cf31ff70e1f9cc957ebf621e",
+      "ablation": "none",
+      "case_count": 10,
+      "metrics": {
+        "task_success_rate": 0.7,
+        "avg_decision_calls": 1.6,
+        "avg_replans": 0.0,
+        "avg_invalid_tool_calls": 0.0,
+        "p95_latency_ms": 22928.77
+      },
+      "provider_usage": {
+        "stage_calls": 46,
+        "measured_stage_calls": 43,
+        "coverage": 0.9348,
+        "input_tokens": 114134,
+        "output_tokens": 10802,
+        "total_tokens": null
+      },
+      "budget": {
+        "requests": 46,
+        "input_tokens": 106646,
+        "output_tokens": 6971,
+        "total_tokens": null,
+        "charged_tokens": 151772,
+        "usage_measured": false,
+        "estimated_cost_usd": 0.02767474,
+        "elapsed_seconds": 168.985
+      },
+      "execution_scope": "production generation stages only; no PostgreSQL/MinIO/SQL execution"
+    },
+    "ablation_no_skill": {
+      "label": "ablation-no-skill",
+      "git_sha": "8e908aced7e39ac8cf31ff70e1f9cc957ebf621e",
+      "ablation": "no_skill",
+      "case_count": 10,
+      "metrics": {
+        "task_success_rate": 0.7,
+        "avg_decision_calls": 1.6,
+        "avg_replans": 0.0,
+        "avg_invalid_tool_calls": 0.0,
+        "p95_latency_ms": 17617.16
+      },
+      "provider_usage": {
+        "stage_calls": 46,
+        "measured_stage_calls": 33,
+        "coverage": 0.7174,
+        "input_tokens": 97801,
+        "output_tokens": 9035,
+        "total_tokens": null
+      },
+      "budget": {
+        "requests": 36,
+        "input_tokens": 90446,
+        "output_tokens": 5892,
+        "total_tokens": null,
+        "charged_tokens": 134493,
+        "usage_measured": false,
+        "estimated_cost_usd": 0.02345431,
+        "elapsed_seconds": 133.234
+      },
+      "execution_scope": "production generation stages only; no PostgreSQL/MinIO/SQL execution"
+    }
+  },
+  "paired_cases": [
+    {
+      "case_id": "A",
+      "baseline": {
+        "task_success": false,
+        "elapsed_ms": 19060.91,
+        "stage_failures": [
+          "GroundedResponseValidationError"
+        ],
+        "stage_count": 5,
+        "decision_calls": 2
+      },
+      "optimized": {
+        "task_success": true,
+        "elapsed_ms": 24646.66,
+        "stage_failures": [],
+        "stage_count": 5,
+        "decision_calls": 2
+      },
+      "ablation_no_skill": {
+        "task_success": true,
+        "elapsed_ms": 19033.21,
+        "stage_failures": [],
+        "stage_count": 5,
+        "decision_calls": 2
+      }
+    },
+    {
+      "case_id": "B",
+      "baseline": {
+        "task_success": false,
+        "elapsed_ms": 14818.98,
+        "stage_failures": [
+          "SQLScopeValidationError"
+        ],
+        "stage_count": 4,
+        "decision_calls": 1
+      },
+      "optimized": {
+        "task_success": false,
+        "elapsed_ms": 15111.16,
+        "stage_failures": [
+          "SQLScopeValidationError"
+        ],
+        "stage_count": 4,
+        "decision_calls": 1
+      },
+      "ablation_no_skill": {
+        "task_success": false,
+        "elapsed_ms": 11012.19,
+        "stage_failures": [
+          "SQLScopeValidationError"
+        ],
+        "stage_count": 4,
+        "decision_calls": 1
+      }
+    },
+    {
+      "case_id": "C",
+      "baseline": {
+        "task_success": false,
+        "elapsed_ms": 13673.81,
+        "stage_failures": [
+          "SQLScopeValidationError"
+        ],
+        "stage_count": 5,
+        "decision_calls": 2
+      },
+      "optimized": {
+        "task_success": false,
+        "elapsed_ms": 15552.15,
+        "stage_failures": [
+          "SQLScopeValidationError"
+        ],
+        "stage_count": 5,
+        "decision_calls": 2
+      },
+      "ablation_no_skill": {
+        "task_success": false,
+        "elapsed_ms": 12968.77,
+        "stage_failures": [
+          "SQLScopeValidationError"
+        ],
+        "stage_count": 5,
+        "decision_calls": 2
+      }
+    },
+    {
+      "case_id": "CANCEL",
+      "baseline": {
+        "task_success": true,
+        "elapsed_ms": 11277.0,
+        "stage_failures": [],
+        "stage_count": 4,
+        "decision_calls": 1
+      },
+      "optimized": {
+        "task_success": true,
+        "elapsed_ms": 13919.23,
+        "stage_failures": [],
+        "stage_count": 4,
+        "decision_calls": 1
+      },
+      "ablation_no_skill": {
+        "task_success": true,
+        "elapsed_ms": 11660.97,
+        "stage_failures": [],
+        "stage_count": 4,
+        "decision_calls": 1
+      }
+    },
+    {
+      "case_id": "D06",
+      "baseline": {
+        "task_success": true,
+        "elapsed_ms": 22337.07,
+        "stage_failures": [],
+        "stage_count": 5,
+        "decision_calls": 2
+      },
+      "optimized": {
+        "task_success": true,
+        "elapsed_ms": 15416.71,
+        "stage_failures": [],
+        "stage_count": 5,
+        "decision_calls": 2
+      },
+      "ablation_no_skill": {
+        "task_success": true,
+        "elapsed_ms": 15317.31,
+        "stage_failures": [],
+        "stage_count": 5,
+        "decision_calls": 2
+      }
+    },
+    {
+      "case_id": "D08",
+      "baseline": {
+        "task_success": false,
+        "elapsed_ms": 15238.74,
+        "stage_failures": [
+          "SQLScopeValidationError"
+        ],
+        "stage_count": 5,
+        "decision_calls": 2
+      },
+      "optimized": {
+        "task_success": false,
+        "elapsed_ms": 22928.77,
+        "stage_failures": [
+          "SQLScopeValidationError"
+        ],
+        "stage_count": 5,
+        "decision_calls": 2
+      },
+      "ablation_no_skill": {
+        "task_success": false,
+        "elapsed_ms": 17617.16,
+        "stage_failures": [
+          "SQLScopeValidationError"
+        ],
+        "stage_count": 5,
+        "decision_calls": 2
+      }
+    },
+    {
+      "case_id": "D09",
+      "baseline": {
+        "task_success": true,
+        "elapsed_ms": 16240.02,
+        "stage_failures": [],
+        "stage_count": 5,
+        "decision_calls": 2
+      },
+      "optimized": {
+        "task_success": true,
+        "elapsed_ms": 16905.58,
+        "stage_failures": [],
+        "stage_count": 5,
+        "decision_calls": 2
+      },
+      "ablation_no_skill": {
+        "task_success": true,
+        "elapsed_ms": 12756.25,
+        "stage_failures": [],
+        "stage_count": 5,
+        "decision_calls": 2
+      }
+    },
+    {
+      "case_id": "HITL",
+      "baseline": {
+        "task_success": true,
+        "elapsed_ms": 13043.86,
+        "stage_failures": [],
+        "stage_count": 4,
+        "decision_calls": 1
+      },
+      "optimized": {
+        "task_success": true,
+        "elapsed_ms": 13123.79,
+        "stage_failures": [],
+        "stage_count": 4,
+        "decision_calls": 1
+      },
+      "ablation_no_skill": {
+        "task_success": true,
+        "elapsed_ms": 8106.55,
+        "stage_failures": [],
+        "stage_count": 4,
+        "decision_calls": 1
+      }
+    },
+    {
+      "case_id": "M02",
+      "baseline": {
+        "task_success": true,
+        "elapsed_ms": 18215.59,
+        "stage_failures": [],
+        "stage_count": 5,
+        "decision_calls": 2
+      },
+      "optimized": {
+        "task_success": true,
+        "elapsed_ms": 17082.88,
+        "stage_failures": [],
+        "stage_count": 5,
+        "decision_calls": 2
+      },
+      "ablation_no_skill": {
+        "task_success": true,
+        "elapsed_ms": 15345.6,
+        "stage_failures": [],
+        "stage_count": 5,
+        "decision_calls": 2
+      }
+    },
+    {
+      "case_id": "RERUN",
+      "baseline": {
+        "task_success": true,
+        "elapsed_ms": 21213.86,
+        "stage_failures": [],
+        "stage_count": 4,
+        "decision_calls": 1
+      },
+      "optimized": {
+        "task_success": true,
+        "elapsed_ms": 13970.97,
+        "stage_failures": [],
+        "stage_count": 4,
+        "decision_calls": 1
+      },
+      "ablation_no_skill": {
+        "task_success": true,
+        "elapsed_ms": 9416.42,
+        "stage_failures": [],
+        "stage_count": 4,
+        "decision_calls": 1
+      }
+    }
+  ]
+}

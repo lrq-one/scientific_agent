@@ -1,0 +1,11 @@
+case_id,baseline_success,optimized_success,ablation_no_skill_success,baseline_ms,optimized_ms,ablation_no_skill_ms,baseline_failures,optimized_failures,ablation_failures
+A,false,true,true,19060.91,24646.66,19033.21,GroundedResponseValidationError,,
+B,false,false,false,14818.98,15111.16,11012.19,SQLScopeValidationError,SQLScopeValidationError,SQLScopeValidationError
+C,false,false,false,13673.81,15552.15,12968.77,SQLScopeValidationError,SQLScopeValidationError,SQLScopeValidationError
+CANCEL,true,true,true,11277.00,13919.23,11660.97,,,
+D06,true,true,true,22337.07,15416.71,15317.31,,,
+D08,false,false,false,15238.74,22928.77,17617.16,SQLScopeValidationError,SQLScopeValidationError,SQLScopeValidationError
+D09,true,true,true,16240.02,16905.58,12756.25,,,
+HITL,true,true,true,13043.86,13123.79,8106.55,,,
+M02,true,true,true,18215.59,17082.88,15345.60,,,
+RERUN,true,true,true,21213.86,13970.97,9416.42,,,

@@ -1,0 +1,73 @@
+{
+  "failed_stages": [
+    {
+      "stage": "text2sql",
+      "success": false,
+      "latency_ms": 4547.73,
+      "error_type": "SQLScopeValidationError",
+      "error": "UNVERIFIED_SCOPE: outer/cross/implicit joins require population proof beyond this checker",
+      "diagnostic_candidate": {
+        "sql": "WITH train_coverage AS (\n    SELECT\n        tm.structure_type,\n        COUNT(*) AS coverage_count\n    FROM training_molecules tm\n    WHERE tm.split = %(split)s\n      AND tm.dataset_version = %(dataset_version)s\n    GROUP BY tm.structure_type\n),\nprediction_errors AS (\n    SELECT\n        p.absolute_error,\n        m.structure_type\n    FROM predictions p\n    JOIN molecules m ON p.molecule_id = m.molecule_id\n    JOIN model_runs mr ON p.model_run_id = mr.id\n    JOIN dataset_versions dv ON mr.training_dataset_version_id = dv.id\n    WHERE dv.version = %(dataset_version)s\n)\nSELECT\n    COALESCE(tc.structure_type, pe.structure_type) AS structure_type,\n    tc.coverage_count AS training_coverage,\n    COUNT(pe.absolute_error) AS prediction_count,\n    AVG(pe.absolute_error) AS mean_absolute_error\nFROM train_coverage tc\nFULL OUTER JOIN prediction_errors pe\n    ON tc.structure_type = pe.structure_type\nGROUP BY tc.structure_type, tc.coverage_count, pe.structure_type\nORDER BY structure_type;",
+        "params": {
+          "split": "train",
+          "dataset_version": "train_v3"
+        },
+        "reason": "The query joins prediction errors with training coverage by using a FULL OUTER JOIN between a CTE for training coverage (filtered by split and version) and the predictions table joined to molecule structure types. This preserves all structure types present in either population, ensuring scope safety and accurate coverage comparison without eliminating non-members or zero-count groups.",
+        "query_scope": {
+          "dataset_id": null,
+          "dataset_version": "train_v3",
+          "dataset_version_id": null,
+          "version_identifier_type": "LABEL",
+          "split": "train",
+          "whole_dataset": false,
+          "entity": null,
+          "filters": {},
+          "grouping": [],
+          "aggregation": null,
+          "comparison_target": [],
+          "user_constraints": [],
+          "datasource_id": "training_db",
+          "all_versions": false,
+          "authorized_version_ids": [],
+          "authorized_version_labels": []
+        }
+      },
+      "query_scope": {
+        "dataset_id": null,
+        "dataset_version": "train_v3",
+        "dataset_version_id": null,
+        "version_identifier_type": "LABEL",
+        "split": "train",
+        "whole_dataset": false,
+        "entity": null,
+        "filters": {},
+        "grouping": [],
+        "aggregation": null,
+        "comparison_target": [],
+        "user_constraints": [],
+        "datasource_id": "training_db",
+        "all_versions": false,
+        "authorized_version_ids": [],
+        "authorized_version_labels": []
+      },
+      "scope_validation": {
+        "verified": false,
+        "status": "UNVERIFIED_SCOPE",
+        "failure_code": "UNVERIFIED_SCOPE",
+        "reason": "UNVERIFIED_SCOPE: outer/cross/implicit joins require population proof beyond this checker"
+      },
+      "recovery": {
+        "failed_stage": "sql_scope_validation",
+        "candidate_role": "diagnostic_only",
+        "failure_code": "UNVERIFIED_SCOPE",
+        "recovery_action": "targeted_sql_repair",
+        "retry_budget": 1,
+        "instruction": "The supplied QueryScope is unchanged. Repair the SQL predicate/lineage, or retrieve missing authorized schema; renaming a Plan or dropping scope does not repair SQL."
+      },
+      "sql_candidate_status": "diagnostic_only"
+    }
+  ],
+  "notes": [
+    "Provider errors are preserved as outcomes; no fallback metrics are fabricated."
+  ]
+}

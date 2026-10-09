@@ -87,12 +87,14 @@ class SkillService:
         if not settings.configured:
             return None
         from langchain_openai import ChatOpenAI
+        from app.services.live_budget import live_max_retries
 
         return ChatOpenAI(
             model=settings.model,
             api_key=settings.api_key,
             base_url=settings.api_base,
             temperature=0,
+            max_retries=live_max_retries(1),
             extra_body={"enable_thinking": False} if (settings.model or "").startswith("qwen") else None,
         )
 
@@ -164,6 +166,8 @@ class SkillService:
             f"Skill catalog: {json.dumps([self._compact(item) for item in candidates], ensure_ascii=False)}"
         )
         started = perf_counter()
+        from app.services.live_budget import record_live_call, reserve_live_call
+        reserve_live_call("skill_routing", max(1, len(prompt) // 4 + 1200))
         try:
             result = await llm.with_structured_output(SkillSelection).ainvoke(
                 prompt,
@@ -184,11 +188,12 @@ class SkillService:
                 "model_configured": settings.model,
                 **collector.snapshot(),
             }
+            record_live_call("skill_routing", collector.snapshot(), latency_ms=(perf_counter() - started) * 1000)
             # An empty semantic selection is valid (e.g. conversation or direct
             # inspection); do not replace it with a keyword-selected Skill.
             return selected[:3], "llm_compact_catalog", telemetry
-        except Exception:
-            pass
+        except Exception as exc:
+            record_live_call("skill_routing", collector.snapshot(), latency_ms=(perf_counter() - started) * 1000, error=type(exc).__name__)
 
         selected = [name for name in self.select(goal, task_type) if name in allowed]
         return selected, "deterministic_fallback", {

@@ -1,0 +1,68 @@
+{
+  "baseline": [
+    {
+      "case_id": "A",
+      "stage": "grounded_response",
+      "error_type": "GroundedResponseValidationError",
+      "error": "Grounded answer failed persisted-fact validation: {\"grounding_issues\": [\"Empirical claims must cite existing supporting Evidence IDs\"], \"instruction\": \"Correct the assertion, not the evidence: qualify retrieval limits, use descriptive comparisons only, and cite actual persisted Evidence IDs.\"}"
+    },
+    {
+      "case_id": "B",
+      "stage": "text2sql",
+      "error_type": "SQLScopeValidationError",
+      "error": "UNVERIFIED_SCOPE: outer/cross/implicit joins require population proof beyond this checker"
+    },
+    {
+      "case_id": "C",
+      "stage": "text2sql",
+      "error_type": "SQLScopeValidationError",
+      "error": "UNVERIFIED_SCOPE: outer/cross/implicit joins require population proof beyond this checker"
+    },
+    {
+      "case_id": "D08",
+      "stage": "text2sql",
+      "error_type": "SQLScopeValidationError",
+      "error": "UNVERIFIED_SCOPE: negated predicates cannot establish a positive scope binding"
+    }
+  ],
+  "optimized": [
+    {
+      "case_id": "B",
+      "stage": "text2sql",
+      "error_type": "SQLScopeValidationError",
+      "error": "UNVERIFIED_SCOPE: outer/cross/implicit joins require population proof beyond this checker"
+    },
+    {
+      "case_id": "C",
+      "stage": "text2sql",
+      "error_type": "SQLScopeValidationError",
+      "error": "UNVERIFIED_SCOPE: outer/cross/implicit joins require population proof beyond this checker"
+    },
+    {
+      "case_id": "D08",
+      "stage": "text2sql",
+      "error_type": "SQLScopeValidationError",
+      "error": "SCOPE_VIOLATION: QueryScope missing population split='train'; EXPLAIN/SQL success is insufficient"
+    }
+  ],
+  "ablation_no_skill": [
+    {
+      "case_id": "B",
+      "stage": "text2sql",
+      "error_type": "SQLScopeValidationError",
+      "error": "UNVERIFIED_SCOPE: outer/cross/implicit joins require population proof beyond this checker"
+    },
+    {
+      "case_id": "C",
+      "stage": "text2sql",
+      "error_type": "SQLScopeValidationError",
+      "error": "UNVERIFIED_SCOPE: outer/cross/implicit joins require population proof beyond this checker"
+    },
+    {
+      "case_id": "D08",
+      "stage": "text2sql",
+      "error_type": "SQLScopeValidationError",
+      "error": "SCOPE_VIOLATION: QueryScope missing population split='train'; EXPLAIN/SQL success is insufficient"
+    }
+  ]
+}

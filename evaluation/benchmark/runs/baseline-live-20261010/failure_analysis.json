@@ -1,0 +1,35 @@
+{
+  "failed_stages": [
+    {
+      "stage": "grounded_response",
+      "success": false,
+      "latency_ms": 5903.85,
+      "error_type": "GroundedResponseValidationError",
+      "error": "Grounded answer failed persisted-fact validation: {\"grounding_issues\": [\"Empirical claims must cite existing supporting Evidence IDs\"], \"instruction\": \"Correct the assertion, not the evidence: qualify retrieval limits, use descriptive comparisons only, and cite actual persisted Evidence IDs.\"}"
+    },
+    {
+      "stage": "text2sql",
+      "success": false,
+      "latency_ms": 5484.98,
+      "error_type": "SQLScopeValidationError",
+      "error": "UNVERIFIED_SCOPE: outer/cross/implicit joins require population proof beyond this checker"
+    },
+    {
+      "stage": "text2sql",
+      "success": false,
+      "latency_ms": 4084.09,
+      "error_type": "SQLScopeValidationError",
+      "error": "UNVERIFIED_SCOPE: outer/cross/implicit joins require population proof beyond this checker"
+    },
+    {
+      "stage": "text2sql",
+      "success": false,
+      "latency_ms": 3306.56,
+      "error_type": "SQLScopeValidationError",
+      "error": "UNVERIFIED_SCOPE: negated predicates cannot establish a positive scope binding"
+    }
+  ],
+  "notes": [
+    "Provider errors are preserved as outcomes; no fallback metrics are fabricated."
+  ]
+}

@@ -148,12 +148,13 @@ class TextToSQLService:
         if not settings.configured:
             return None
         from langchain_openai import ChatOpenAI
+        from app.services.live_budget import live_max_retries
 
         return ChatOpenAI(
             model=settings.model,
             api_key=settings.api_key,
             base_url=settings.api_base,
-            temperature=0,
+            temperature=0, max_retries=live_max_retries(1),
             extra_body={"enable_thinking": False} if (settings.model or "").startswith("qwen") else None,
         )
 
@@ -247,6 +248,8 @@ class TextToSQLService:
         if llm is not None:
             collector = UsageCollector()
             started = perf_counter()
+            from app.services.live_budget import record_live_call, reserve_live_call
+            reserve_live_call("text2sql", max(1, len(self.prompt(goal, current_step, datasource, relevant, relationships, dataset_version, repair_feedback, skill_context, original_goal, query_scope, resource_binding)) // 4 + 1200))
             try:
                 candidate = await llm.with_structured_output(SQLCandidate).ainvoke(
                     self.prompt(
@@ -276,6 +279,7 @@ class TextToSQLService:
                         "http_status": None, "fallback": False, **collector.snapshot(),
                     },
                 }
+                record_live_call("text2sql", collector.snapshot(), latency_ms=(perf_counter() - started) * 1000)
                 if dataset_version and query_scope is None and "%(dataset_version)s" not in candidate.sql:
                     raise ValueError("SQLCandidate did not bind the requested dataset_version")
                 if dataset_version and query_scope is None:
@@ -294,6 +298,7 @@ class TextToSQLService:
                 metadata["sql_candidate_status"] = "scope_verified" if query_scope else "generated"
                 return candidate, metadata
             except Exception as exc:
+                record_live_call("text2sql", collector.snapshot(), latency_ms=(perf_counter() - started) * 1000, error=type(exc).__name__)
                 if isinstance(exc, SQLScopeValidationError):
                     raise
                 if isinstance(exc, ValueError) and str(exc).startswith("QueryScope"):

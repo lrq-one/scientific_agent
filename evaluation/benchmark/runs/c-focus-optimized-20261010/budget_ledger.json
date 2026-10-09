@@ -1,0 +1,110 @@
+{
+  "limits": {
+    "max_requests": 40,
+    "max_tokens": 250000,
+    "max_cost_usd": 5.0,
+    "max_minutes": 20.0
+  },
+  "usage": {
+    "requests": 5,
+    "input_tokens": 10107,
+    "output_tokens": 732,
+    "total_tokens": 14659,
+    "reserved_tokens": 0,
+    "usage_measured": false,
+    "estimated_cost_usd": 0.00268149
+  },
+  "events": [
+    {
+      "event": "run_started",
+      "time": 1791570586.4535046,
+      "provider_host": "dashscope.aliyuncs.com",
+      "model": "qwen3.7-flash"
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791570586.4555044,
+      "stage": "skill_routing",
+      "estimated_tokens": 1820
+    },
+    {
+      "event": "request_finished",
+      "time": 1791570590.4704487,
+      "stage": "skill_routing",
+      "input_tokens": 1494,
+      "output_tokens": 171,
+      "total_tokens": 1665,
+      "charged_tokens": 1665,
+      "latency_ms": 4014.32,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791570590.4714186,
+      "stage": "planning",
+      "estimated_tokens": 1620
+    },
+    {
+      "event": "request_finished",
+      "time": 1791570592.314307,
+      "stage": "planning",
+      "input_tokens": 306,
+      "output_tokens": 132,
+      "total_tokens": 438,
+      "charged_tokens": 438,
+      "latency_ms": 1842.43,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791570592.3163397,
+      "stage": "text2sql",
+      "estimated_tokens": 3820
+    },
+    {
+      "event": "request_finished",
+      "time": 1791570596.4766665,
+      "stage": "text2sql",
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null,
+      "charged_tokens": 3820,
+      "latency_ms": 4158.85,
+      "error_type": "SQLScopeValidationError"
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791570596.477675,
+      "stage": "decision",
+      "estimated_tokens": 5220
+    },
+    {
+      "event": "request_finished",
+      "time": 1791570598.9558349,
+      "stage": "decision",
+      "input_tokens": 5913,
+      "output_tokens": 231,
+      "total_tokens": 6144,
+      "charged_tokens": 6144,
+      "latency_ms": 2478.03,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791570598.9568667,
+      "stage": "grounded_response",
+      "estimated_tokens": 5620
+    },
+    {
+      "event": "request_finished",
+      "time": 1791570602.0093582,
+      "stage": "grounded_response",
+      "input_tokens": 2394,
+      "output_tokens": 198,
+      "total_tokens": 2592,
+      "charged_tokens": 2592,
+      "latency_ms": 3051.92,
+      "error_type": null
+    }
+  ]
+}

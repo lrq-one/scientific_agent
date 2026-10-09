@@ -1,0 +1,807 @@
+{
+  "limits": {
+    "max_requests": 80,
+    "max_tokens": 500000,
+    "max_cost_usd": 10.0,
+    "max_minutes": 40.0
+  },
+  "usage": {
+    "requests": 46,
+    "input_tokens": 106646,
+    "output_tokens": 6971,
+    "total_tokens": 151772,
+    "reserved_tokens": 0,
+    "usage_measured": false,
+    "estimated_cost_usd": 0.02767474
+  },
+  "events": [
+    {
+      "event": "run_started",
+      "time": 1791569495.9969032,
+      "provider_host": "dashscope.aliyuncs.com",
+      "model": "qwen3.7-flash"
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569495.999905,
+      "stage": "skill_routing",
+      "estimated_tokens": 1815
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569499.1266642,
+      "stage": "skill_routing",
+      "input_tokens": 1492,
+      "output_tokens": 83,
+      "total_tokens": 1575,
+      "charged_tokens": 1575,
+      "latency_ms": 3126.16,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569499.1266642,
+      "stage": "planning",
+      "estimated_tokens": 1615
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569500.357126,
+      "stage": "planning",
+      "input_tokens": 206,
+      "output_tokens": 75,
+      "total_tokens": 281,
+      "charged_tokens": 281,
+      "latency_ms": 1229.37,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569500.3581243,
+      "stage": "text2sql",
+      "estimated_tokens": 3815
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569506.4341621,
+      "stage": "text2sql",
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null,
+      "charged_tokens": 3815,
+      "latency_ms": 6075.65,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569506.4361567,
+      "stage": "decision",
+      "estimated_tokens": 5215
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569509.9623237,
+      "stage": "decision",
+      "input_tokens": 5885,
+      "output_tokens": 327,
+      "total_tokens": 6212,
+      "charged_tokens": 6212,
+      "latency_ms": 3525.37,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569509.9633522,
+      "stage": "grounded_response",
+      "estimated_tokens": 5615
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569520.6456788,
+      "stage": "grounded_response",
+      "input_tokens": 5295,
+      "output_tokens": 466,
+      "total_tokens": 5761,
+      "charged_tokens": 5761,
+      "latency_ms": 10681.55,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569520.64668,
+      "stage": "skill_routing",
+      "estimated_tokens": 1812
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569523.6085584,
+      "stage": "skill_routing",
+      "input_tokens": 1491,
+      "output_tokens": 163,
+      "total_tokens": 1654,
+      "charged_tokens": 1654,
+      "latency_ms": 2961.32,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569523.6092248,
+      "stage": "text2sql",
+      "estimated_tokens": 3812
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569529.7747817,
+      "stage": "text2sql",
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null,
+      "charged_tokens": 3812,
+      "latency_ms": 6165.08,
+      "error_type": "SQLScopeValidationError"
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569529.7758372,
+      "stage": "decision",
+      "estimated_tokens": 5212
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569532.4289536,
+      "stage": "decision",
+      "input_tokens": 5900,
+      "output_tokens": 245,
+      "total_tokens": 6145,
+      "charged_tokens": 6145,
+      "latency_ms": 2652.21,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569532.4289536,
+      "stage": "grounded_response",
+      "estimated_tokens": 5612
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569535.757092,
+      "stage": "grounded_response",
+      "input_tokens": 2361,
+      "output_tokens": 171,
+      "total_tokens": 2532,
+      "charged_tokens": 2532,
+      "latency_ms": 3326.61,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569535.757092,
+      "stage": "skill_routing",
+      "estimated_tokens": 1820
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569538.1616828,
+      "stage": "skill_routing",
+      "input_tokens": 1494,
+      "output_tokens": 147,
+      "total_tokens": 1641,
+      "charged_tokens": 1641,
+      "latency_ms": 2403.6,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569538.1626947,
+      "stage": "planning",
+      "estimated_tokens": 1620
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569540.220212,
+      "stage": "planning",
+      "input_tokens": 306,
+      "output_tokens": 144,
+      "total_tokens": 450,
+      "charged_tokens": 450,
+      "latency_ms": 2057.0,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569540.2231865,
+      "stage": "text2sql",
+      "estimated_tokens": 3820
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569544.305263,
+      "stage": "text2sql",
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null,
+      "charged_tokens": 3820,
+      "latency_ms": 4079.66,
+      "error_type": "SQLScopeValidationError"
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569544.305263,
+      "stage": "decision",
+      "estimated_tokens": 5220
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569547.2054768,
+      "stage": "decision",
+      "input_tokens": 5913,
+      "output_tokens": 245,
+      "total_tokens": 6158,
+      "charged_tokens": 6158,
+      "latency_ms": 2899.22,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569547.2064462,
+      "stage": "grounded_response",
+      "estimated_tokens": 5620
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569551.3086977,
+      "stage": "grounded_response",
+      "input_tokens": 2428,
+      "output_tokens": 232,
+      "total_tokens": 2660,
+      "charged_tokens": 2660,
+      "latency_ms": 4101.39,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569551.3097205,
+      "stage": "skill_routing",
+      "estimated_tokens": 1814
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569553.4766545,
+      "stage": "skill_routing",
+      "input_tokens": 1492,
+      "output_tokens": 116,
+      "total_tokens": 1608,
+      "charged_tokens": 1608,
+      "latency_ms": 2166.22,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569553.4776554,
+      "stage": "planning",
+      "estimated_tokens": 1614
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569555.147954,
+      "stage": "planning",
+      "input_tokens": 205,
+      "output_tokens": 105,
+      "total_tokens": 310,
+      "charged_tokens": 310,
+      "latency_ms": 1670.13,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569555.1489236,
+      "stage": "text2sql",
+      "estimated_tokens": 3814
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569560.5707133,
+      "stage": "text2sql",
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null,
+      "charged_tokens": 3814,
+      "latency_ms": 5420.59,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569560.5716848,
+      "stage": "decision",
+      "estimated_tokens": 5214
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569563.6109724,
+      "stage": "decision",
+      "input_tokens": 5884,
+      "output_tokens": 270,
+      "total_tokens": 6154,
+      "charged_tokens": 6154,
+      "latency_ms": 3038.6,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569563.6119719,
+      "stage": "grounded_response",
+      "estimated_tokens": 5614
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569566.725554,
+      "stage": "grounded_response",
+      "input_tokens": 2756,
+      "output_tokens": 158,
+      "total_tokens": 2914,
+      "charged_tokens": 2914,
+      "latency_ms": 3112.39,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569566.7265239,
+      "stage": "skill_routing",
+      "estimated_tokens": 1815
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569568.8423524,
+      "stage": "skill_routing",
+      "input_tokens": 1492,
+      "output_tokens": 150,
+      "total_tokens": 1642,
+      "charged_tokens": 1642,
+      "latency_ms": 2114.97,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569568.8433537,
+      "stage": "planning",
+      "estimated_tokens": 1615
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569570.9274747,
+      "stage": "planning",
+      "input_tokens": 210,
+      "output_tokens": 113,
+      "total_tokens": 323,
+      "charged_tokens": 323,
+      "latency_ms": 2082.94,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569570.9284756,
+      "stage": "text2sql",
+      "estimated_tokens": 3815
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569576.8651454,
+      "stage": "text2sql",
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null,
+      "charged_tokens": 3815,
+      "latency_ms": 5936.12,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569576.8681686,
+      "stage": "decision",
+      "estimated_tokens": 5215
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569580.3083637,
+      "stage": "decision",
+      "input_tokens": 5889,
+      "output_tokens": 291,
+      "total_tokens": 6180,
+      "charged_tokens": 6180,
+      "latency_ms": 3437.36,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569580.3093932,
+      "stage": "grounded_response",
+      "estimated_tokens": 5615
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569583.6296594,
+      "stage": "grounded_response",
+      "input_tokens": 3138,
+      "output_tokens": 182,
+      "total_tokens": 3320,
+      "charged_tokens": 3320,
+      "latency_ms": 3319.63,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569583.632157,
+      "stage": "skill_routing",
+      "estimated_tokens": 1817
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569586.4241908,
+      "stage": "skill_routing",
+      "input_tokens": 1494,
+      "output_tokens": 171,
+      "total_tokens": 1665,
+      "charged_tokens": 1665,
+      "latency_ms": 2790.53,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569586.4251919,
+      "stage": "planning",
+      "estimated_tokens": 1617
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569588.089253,
+      "stage": "planning",
+      "input_tokens": 217,
+      "output_tokens": 128,
+      "total_tokens": 345,
+      "charged_tokens": 345,
+      "latency_ms": 1663.12,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569588.091253,
+      "stage": "text2sql",
+      "estimated_tokens": 3817
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569593.9878283,
+      "stage": "text2sql",
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null,
+      "charged_tokens": 3817,
+      "latency_ms": 5895.93,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569593.9888263,
+      "stage": "decision",
+      "estimated_tokens": 5217
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569598.004101,
+      "stage": "decision",
+      "input_tokens": 5902,
+      "output_tokens": 332,
+      "total_tokens": 6234,
+      "charged_tokens": 6234,
+      "latency_ms": 4014.15,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569598.0050693,
+      "stage": "grounded_response",
+      "estimated_tokens": 5617
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569600.7132728,
+      "stage": "grounded_response",
+      "input_tokens": 2820,
+      "output_tokens": 130,
+      "total_tokens": 2950,
+      "charged_tokens": 2950,
+      "latency_ms": 2707.46,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569600.7152557,
+      "stage": "skill_routing",
+      "estimated_tokens": 1817
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569602.3276248,
+      "stage": "skill_routing",
+      "input_tokens": 1496,
+      "output_tokens": 93,
+      "total_tokens": 1589,
+      "charged_tokens": 1589,
+      "latency_ms": 1610.3,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569602.3308585,
+      "stage": "planning",
+      "estimated_tokens": 1617
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569603.923489,
+      "stage": "planning",
+      "input_tokens": 211,
+      "output_tokens": 91,
+      "total_tokens": 302,
+      "charged_tokens": 302,
+      "latency_ms": 1588.3,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569603.9245188,
+      "stage": "text2sql",
+      "estimated_tokens": 3817
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569610.6471784,
+      "stage": "text2sql",
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null,
+      "charged_tokens": 3817,
+      "latency_ms": 6721.21,
+      "error_type": "SQLScopeValidationError"
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569610.6481822,
+      "stage": "decision",
+      "estimated_tokens": 5217
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569614.432407,
+      "stage": "decision",
+      "input_tokens": 5914,
+      "output_tokens": 254,
+      "total_tokens": 6168,
+      "charged_tokens": 6168,
+      "latency_ms": 3782.68,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569614.434406,
+      "stage": "grounded_response",
+      "estimated_tokens": 5617
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569623.6423676,
+      "stage": "grounded_response",
+      "input_tokens": 4213,
+      "output_tokens": 644,
+      "total_tokens": 4857,
+      "charged_tokens": 4857,
+      "latency_ms": 9207.16,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569623.6433957,
+      "stage": "skill_routing",
+      "estimated_tokens": 1814
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569625.6964204,
+      "stage": "skill_routing",
+      "input_tokens": 1492,
+      "output_tokens": 136,
+      "total_tokens": 1628,
+      "charged_tokens": 1628,
+      "latency_ms": 2052.02,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569625.6994228,
+      "stage": "text2sql",
+      "estimated_tokens": 3814
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569630.348435,
+      "stage": "text2sql",
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null,
+      "charged_tokens": 3814,
+      "latency_ms": 4646.64,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569630.3494103,
+      "stage": "decision",
+      "estimated_tokens": 5214
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569633.0197845,
+      "stage": "decision",
+      "input_tokens": 5894,
+      "output_tokens": 238,
+      "total_tokens": 6132,
+      "charged_tokens": 6132,
+      "latency_ms": 2666.2,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569633.0217843,
+      "stage": "grounded_response",
+      "estimated_tokens": 5614
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569636.7650936,
+      "stage": "grounded_response",
+      "input_tokens": 2769,
+      "output_tokens": 161,
+      "total_tokens": 2930,
+      "charged_tokens": 2930,
+      "latency_ms": 3741.61,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569636.7670965,
+      "stage": "skill_routing",
+      "estimated_tokens": 1816
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569638.40737,
+      "stage": "skill_routing",
+      "input_tokens": 1496,
+      "output_tokens": 88,
+      "total_tokens": 1584,
+      "charged_tokens": 1584,
+      "latency_ms": 1634.98,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569638.4100292,
+      "stage": "text2sql",
+      "estimated_tokens": 3816
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569644.910592,
+      "stage": "text2sql",
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null,
+      "charged_tokens": 3816,
+      "latency_ms": 6499.59,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569644.9125934,
+      "stage": "decision",
+      "estimated_tokens": 5216
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569648.1131954,
+      "stage": "decision",
+      "input_tokens": 5892,
+      "output_tokens": 258,
+      "total_tokens": 6150,
+      "charged_tokens": 6150,
+      "latency_ms": 3199.56,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569648.1141965,
+      "stage": "grounded_response",
+      "estimated_tokens": 5616
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569650.736186,
+      "stage": "grounded_response",
+      "input_tokens": 2712,
+      "output_tokens": 126,
+      "total_tokens": 2838,
+      "charged_tokens": 2838,
+      "latency_ms": 2617.05,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569650.7381594,
+      "stage": "skill_routing",
+      "estimated_tokens": 1815
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569652.4779408,
+      "stage": "skill_routing",
+      "input_tokens": 1492,
+      "output_tokens": 89,
+      "total_tokens": 1581,
+      "charged_tokens": 1581,
+      "latency_ms": 1738.62,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569652.480939,
+      "stage": "text2sql",
+      "estimated_tokens": 3815
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569659.0728235,
+      "stage": "text2sql",
+      "input_tokens": null,
+      "output_tokens": null,
+      "total_tokens": null,
+      "charged_tokens": 3815,
+      "latency_ms": 6587.11,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569659.0738237,
+      "stage": "decision",
+      "estimated_tokens": 5215
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569661.6121547,
+      "stage": "decision",
+      "input_tokens": 5876,
+      "output_tokens": 210,
+      "total_tokens": 6086,
+      "charged_tokens": 6086,
+      "latency_ms": 2536.45,
+      "error_type": null
+    },
+    {
+      "event": "request_reserved",
+      "time": 1791569661.613142,
+      "stage": "grounded_response",
+      "estimated_tokens": 5615
+    },
+    {
+      "event": "request_finished",
+      "time": 1791569664.6553576,
+      "stage": "grounded_response",
+      "input_tokens": 2919,
+      "output_tokens": 139,
+      "total_tokens": 3058,
+      "charged_tokens": 3058,
+      "latency_ms": 3041.26,
+      "error_type": null
+    }
+  ]
+}

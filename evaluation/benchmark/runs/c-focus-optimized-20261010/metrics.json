@@ -1,0 +1,27 @@
+{
+  "case_count": 1,
+  "task_success_rate": 0.0,
+  "avg_decision_calls": 2,
+  "avg_replans": 0.0,
+  "avg_invalid_tool_calls": 0.0,
+  "p95_latency_ms": 15554.17,
+  "provider_usage": {
+    "stage_calls": 5,
+    "measured_stage_calls": 4,
+    "coverage": 0.8,
+    "input_tokens": 10107,
+    "output_tokens": 732,
+    "total_tokens": null
+  },
+  "budget": {
+    "requests": 5,
+    "input_tokens": 10107,
+    "output_tokens": 732,
+    "total_tokens": null,
+    "charged_tokens": 14659,
+    "usage_measured": false,
+    "estimated_cost_usd": 0.00268149,
+    "elapsed_seconds": 15.563
+  },
+  "execution_scope": "production generation stages only; no PostgreSQL/MinIO/SQL execution"
+}

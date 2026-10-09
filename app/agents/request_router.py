@@ -2,6 +2,7 @@ from __future__ import annotations
 from app.services.resource_grounding import mentioned
 
 import re
+from time import perf_counter
 import os
 from typing import Any
 
@@ -131,12 +132,13 @@ class RequestRouter:
         if not settings.configured:
             return None
         from langchain_openai import ChatOpenAI
+        from app.services.live_budget import live_max_retries
 
         return ChatOpenAI(
             model=settings.model,
             api_key=settings.api_key,
             base_url=settings.api_base,
-            temperature=0,
+            temperature=0, max_retries=live_max_retries(1),
             extra_body={"enable_thinking": False} if (settings.model or "").startswith("qwen") else None,
         )
 
@@ -162,11 +164,26 @@ class RequestRouter:
             f"Available scientific models: {resources.available_scientific_models}\n"
             f"Available MCP tools: {resources.available_mcp_tools}"
         )
+        from app.services.live_budget import record_live_call, reserve_live_call
+        from app.services.llm_telemetry import UsageCollector
+        collector = UsageCollector(); started = perf_counter()
+        reserve_live_call("request_router", max(1, len(prompt) // 4 + 900))
         try:
-            candidate = await llm.with_structured_output(RequestIntent).ainvoke(prompt)
+            runnable = llm.with_structured_output(RequestIntent)
+            try:
+                candidate = await runnable.ainvoke(prompt, config={"callbacks": [collector]})
+            except TypeError as callback_error:
+                # Small in-process test doubles may expose the original
+                # ``ainvoke(prompt)`` contract only; real LangChain providers
+                # retain callback telemetry in the first path.
+                if "config" not in str(callback_error) and "keyword" not in str(callback_error):
+                    raise
+                candidate = await runnable.ainvoke(prompt)
         except Exception as exc:
+            record_live_call("request_router", collector.snapshot(), latency_ms=(perf_counter() - started) * 1000, error=type(exc).__name__)
             deterministic.reason += f"; LLM fallback after {type(exc).__name__}"
             return deterministic
+        record_live_call("request_router", collector.snapshot(), latency_ms=(perf_counter() - started) * 1000)
         allowed = set()
         if resources.available_files:
             allowed.add(Capability.FILE)

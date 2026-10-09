@@ -1,0 +1,28 @@
+{
+  "failed_stages": [
+    {
+      "stage": "text2sql",
+      "success": false,
+      "latency_ms": 5410.27,
+      "error_type": "SQLScopeValidationError",
+      "error": "UNVERIFIED_SCOPE: outer/cross/implicit joins require population proof beyond this checker"
+    },
+    {
+      "stage": "text2sql",
+      "success": false,
+      "latency_ms": 4622.02,
+      "error_type": "SQLScopeValidationError",
+      "error": "UNVERIFIED_SCOPE: outer/cross/implicit joins require population proof beyond this checker"
+    },
+    {
+      "stage": "text2sql",
+      "success": false,
+      "latency_ms": 6915.3,
+      "error_type": "SQLScopeValidationError",
+      "error": "SCOPE_VIOLATION: QueryScope missing population split='train'; EXPLAIN/SQL success is insufficient"
+    }
+  ],
+  "notes": [
+    "Provider errors are preserved as outcomes; no fallback metrics are fabricated."
+  ]
+}

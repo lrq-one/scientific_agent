@@ -80,12 +80,13 @@ class PlanningPolicy:
         if not settings.configured:
             return None
         from langchain_openai import ChatOpenAI
+        from app.services.live_budget import live_max_retries
 
         return ChatOpenAI(
             model=settings.model,
             api_key=settings.api_key,
             base_url=settings.api_base,
-            temperature=0,
+            temperature=0, max_retries=live_max_retries(1),
             extra_body={"enable_thinking": False} if (settings.model or "").startswith("qwen") else None,
         )
 
@@ -140,6 +141,8 @@ class PlanningPolicy:
         )
         collector = UsageCollector()
         started = perf_counter()
+        from app.services.live_budget import record_live_call, reserve_live_call
+        reserve_live_call("planning", max(1, len(prompt) // 4 + 1000))
         try:
             result = await llm.with_structured_output(StageSelection).ainvoke(
                 prompt,
@@ -148,6 +151,7 @@ class PlanningPolicy:
             selected = [stage for stage in result.stage_ids if stage in available]
             selected = list(dict.fromkeys(selected))
             selected.extend(stage for stage in mandatory_stage_ids(intent) if stage not in selected)
+            record_live_call("planning", collector.snapshot(), latency_ms=(perf_counter() - started) * 1000)
             return selected, "llm_bounded_stage_selection", {
                 "llm_called": True,
                 "fallback": False,
@@ -156,6 +160,7 @@ class PlanningPolicy:
                 **collector.snapshot(),
             }
         except Exception as exc:
+            record_live_call("planning", collector.snapshot(), latency_ms=(perf_counter() - started) * 1000, error=type(exc).__name__)
             return fallback, "deterministic_fallback", {
                 "llm_called": True,
                 "fallback": True,

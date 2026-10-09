@@ -10,6 +10,7 @@ from typing import Any
 from app.models.schemas import ConversationContextSummary, FollowUpDecision, ProvenanceRecord, TaskRefinementPatch, StateSufficiency
 from app.services.llm_config import llm_settings
 from app.services.llm_telemetry import UsageCollector
+from app.services.live_budget import live_max_retries
 
 
 REUSE_TYPES = {"EVIDENCE_EXPLANATION", "RESULT_EXPLANATION", "ERROR_QUESTION"}
@@ -207,6 +208,7 @@ class ConversationContextResolver:
             base_url=settings.api_base,
             temperature=0,
             max_tokens=900,
+            max_retries=live_max_retries(1),
             extra_body={"enable_thinking": False},
         )
 
@@ -299,6 +301,8 @@ class ConversationContextResolver:
         )
         collector = UsageCollector()
         started = perf_counter()
+        from app.services.live_budget import record_live_call, reserve_live_call
+        reserve_live_call("followup", max(1, len(prompt) // 4 + 1200))
         try:
             semantic_schema = FollowUpDecision.model_json_schema()
             for server_field in ("source", "llm_telemetry"):
@@ -308,8 +312,10 @@ class ConversationContextResolver:
             result.source = "llm_structured"
             result.llm_telemetry = {"llm_called": True, "fallback": False, "model_configured": llm_settings().model,
                                     "latency_ms": round((perf_counter()-started)*1000, 2), **collector.snapshot()}
+            record_live_call("followup", collector.snapshot(), latency_ms=(perf_counter()-started)*1000)
             return self._attach_target(result, query, contexts)
         except Exception as exc:
+            record_live_call("followup", collector.snapshot(), latency_ms=(perf_counter()-started)*1000, error=type(exc).__name__)
             return FollowUpDecision(interaction_type="CLARIFY", reason=f"semantic classification failed: {type(exc).__name__}",
                                     clarification_question="语义理解暂时失败，请稍后重试。本轮未重新分析。", source="unavailable",
                                     llm_telemetry={"llm_called": True, "fallback": False, "classification_failed": True,
