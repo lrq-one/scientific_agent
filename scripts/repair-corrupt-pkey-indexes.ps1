@@ -11,7 +11,10 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $Root
 
 function Invoke-Docker {
-    param([string[]]$Arguments)
+    # Array splatting sends positional items through the automatic args array.
+    # Do not declare a single string[] positional parameter: it can bind only
+    # the first splatted item under Windows PowerShell 5.1.
+    $Arguments = @($args)
     & docker @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "Docker command failed (exit=$LASTEXITCODE): docker $($Arguments -join ' ')"
