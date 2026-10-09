@@ -40,8 +40,12 @@ def _explicit_sources(state: ScientificAgentState, text: str) -> list[str]:
             sources.append(datasource)
     if _DB_RE.search(text):
         sources.append("database")
-    if _FILE_RE.search(text):
+    files = list(dict.fromkeys(match.group(0) for match in _FILE_RE.finditer(text)))
+    if files:
         sources.append("file")
+        # Preserve the user-named files as data-source requirements as well as
+        # the coarse file capability used by GoalCoverage.
+        sources.extend(files)
     return list(dict.fromkeys(sources))
 
 
