@@ -17,7 +17,7 @@ D08 closure trace；另有独立的 HITL 合同版本、RERUN 防历史污染、
 scope 和 SQLCandidate recovery 测试。当前新增 P1 测试结果：
 
 - GoalContract：7 passed；
-- PlanStep：12 passed；
+- PlanStep：13 passed（含 ALL/ANY 谓词）；
 - RecoveryPolicy：12 passed；
 - deterministic executor：4 passed；
 - acceptance matrix：7 passed；

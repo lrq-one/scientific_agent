@@ -34,5 +34,5 @@ CALL_TOOL 在运行时还会检查 active step 的 `required_inputs`，并将完
 ## 测试
 
 `tests/test_p1_planstep_protocol.py` 验证旧字段兼容、optional 工具、scope 完成谓词、
-required inputs、伪造观察清除和非法谓词拒绝。P1.2 新增测试 5 个；与 P0 计划边界
+ALL/ANY、required inputs、伪造观察清除和非法谓词拒绝。P1.2 新增测试 6 个；与 P0 计划边界
 回归合计 108 个通过。未调用 Qwen，未写 PostgreSQL/MinIO，未改历史任务或冻结基准。
