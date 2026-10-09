@@ -19,6 +19,8 @@ D09/M02/D08 的结构化回放矩阵仍由 `tests/test_p1_acceptance_matrix.py` 
 
 ## 计数与证据
 
-本文件新增 5 个 E2E 测试，结果：`5 passed`。专项 P1/P0 回归（P1、P0、C recovery、plan completion、runtime boundary、new E2E、tool registry contract）结果：`200 passed`。E2E 中 Fake provider 的 telemetry 明确标记 `fallback=false`；真实付费 LLM 调用次数为 0。
+本文件新增 5 个 E2E 测试，结果：`5 passed`。当前显式隔离外部服务的聚焦回归（P1、P0、C recovery、plan completion、runtime boundary、new E2E、tool registry contract）结果：`84 passed / 9 skipped`。E2E 中 Fake provider 的 telemetry 明确标记 `fallback=false`；真实付费 LLM 调用次数为 0。
+
+历史只读任务标识：A=`650ffd90-e72a-4ad0-bb7d-69a88fb80c67`，B=`32694656-4c73-4d7f-bc7c-c30874de7f83`，C=`8808d8f1-ee34-443c-a56e-1e2c7eff8bf4`；这些持久化记录未被本轮测试或修改触碰。
 
 反事实已锁定：移除 trusted SQL candidate 时 Query Checker 不在 callable set；用失败 Observation 的 rows 作为 `input_refs` 会被拒绝；Plan 完成后全局工具不会越界；新 RERUN thread 不复用旧 tool/evidence IDs；删除 artifact 的隔离文件会使 artifact 断言失败而不改变历史任务。

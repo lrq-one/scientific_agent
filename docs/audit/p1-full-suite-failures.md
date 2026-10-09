@@ -1,8 +1,8 @@
 # P1 全仓失败逐项审计
 
-审计基线：分支 `codex/agent-protocol-audit-20261009`，HEAD `fa5586b`（本轮另有未提交的最小确定性边界修复、合同测试修正和无模型 E2E）。原报告中的 `408 passed / 18 failed` 是在清除几个环境变量后运行的，但项目配置使用 `os.environ.setdefault` 从 `.env` 恢复了 `CHECKPOINT_DATABASE_URL`，并且 `test_mixed_e2e.py` 自带默认 PostgreSQL URL。因此这不是安全的离线基线。
+审计基线：分支 `codex/agent-protocol-audit-20261009`，历史基线 HEAD `fa5586b`；当前本地提交为 `48a52eb`。原报告中的 `408 passed / 18 failed` 是在清除几个环境变量后运行的，但项目配置使用 `os.environ.setdefault` 从 `.env` 恢复了 `CHECKPOINT_DATABASE_URL`，并且 `test_mixed_e2e.py` 自带默认 PostgreSQL URL。因此这不是安全的离线基线。
 
-受控基线通过 Python 入口在导入应用前显式置空 `ADMIN_DATABASE_URL`、`DATABASE_URL`、`CHECKPOINT_DATABASE_URL`、LLM 变量，并把 `TEST_POSTGRES_URL` 指向 `127.0.0.1:1`，避免任何真实 PostgreSQL/MinIO/模型访问。当前全仓结果为 `391 passed / 10 failed / 32 skipped`；工具计数契约已修正，并新增 5 个 LangGraph 无模型 E2E。测试失败没有通过删除断言或 `xfail` 隐藏。
+受控基线通过 Python 入口在导入应用前显式置空 `ADMIN_DATABASE_URL`、`DATABASE_URL`、`CHECKPOINT_DATABASE_URL`、LLM 变量，并把 `TEST_POSTGRES_URL` 指向 `127.0.0.1:1`，避免任何真实 PostgreSQL/MinIO/模型访问。当前全仓结果为 `392 passed / 10 failed / 32 skipped`；工具计数契约已修正，并新增 5 个 LangGraph 无模型 E2E。测试失败没有通过删除断言或 `xfail` 隐藏。
 
 ## 原始 18 条逐项记录
 
