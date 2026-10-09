@@ -114,9 +114,10 @@ WHERE c.oid IN ('public.molecules_pkey'::regclass,
                 'public.training_molecules_pkey'::regclass)
 ORDER BY c.relname;
 '@
-$IndexRows = @(& docker compose exec -T postgres psql
-    -U scientific -d scientific_agent -X -v ON_ERROR_STOP=1 -At
-    -c $IdentitySQL)
+$IndexArguments = @('compose','exec','-T','postgres','psql',
+    '-U','scientific','-d','scientific_agent','-X','-v','ON_ERROR_STOP=1','-At',
+    '-c',$IdentitySQL)
+$IndexRows = @(& docker @IndexArguments)
 if ($LASTEXITCODE -ne 0 -or $IndexRows.Count -ne 2 -or
     $IndexRows -notcontains 'molecules_pkey|molecules|i' -or
     $IndexRows -notcontains 'training_molecules_pkey|training_molecules|i') {
