@@ -189,9 +189,10 @@ exported_tables contains actual downloadable contents: reject any claim that the
         keys = {key for content in decision.requested_content for key in mapping.get(content, [])}
         # SQL selection must not smuggle in an unrequested candidate rationale.
         selected = {key: bounded(p[key], rows=20, chars=3500) for key in keys}
-        if "evidence" in selected:
-            # History uses database field names/UUIDs, while live Agent facts
-            # use value/evidence_id. Give the composer one unambiguous format.
+        if "evidence" in decision.requested_content or "claim" in decision.requested_content:
+            # A persisted claim can cite its Evidence only when the composer
+            # and deterministic validator receive the SAME real identifiers.
+            # Return those supporting records even for a claim-only followup.
             selected["evidence"] = [{"evidence_id": item.get("id", item.get("evidence_id")),
                 "claim": item.get("claim"), "value": bounded(item.get("value_json", item.get("value"))),
                 "source": item.get("source"), "dataset_version": item.get("dataset_version")}
