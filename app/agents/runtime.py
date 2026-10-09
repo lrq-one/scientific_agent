@@ -491,9 +491,15 @@ class DecisionRuntime:
                 return None
             return candidate
         files = list(state.resource_binding.files or state.available_files)
+        named_files = []
+        if state.goal_contract is not None:
+            named_files = [item for item in state.goal_contract.required_data_sources
+                           if re.search(r"\.(?:csv|xlsx|xls)$", str(item), re.I)]
+        if not named_files:
+            return None
         if tool in {"inspect_table", "read_csv", "read_excel", "profile_dataset",
                      "calculate_metrics", "find_high_error_samples", "filter_samples"}:
-            if len(files) != 1:
+            if len(named_files) != 1 or set(files) != set(named_files):
                 return None
             args = {"filename": files[0]}
             if tool == "find_high_error_samples":
@@ -502,13 +508,13 @@ class DecisionRuntime:
                 return None
             return args
         if tool == "group_metrics":
-            if len(files) != 1 or len(state.query_scope.grouping) != 1:
+            if len(named_files) != 1 or set(files) != set(named_files) or len(state.query_scope.grouping) != 1:
                 return None
             return {"filename": files[0], "group": state.query_scope.grouping[0]}
         if tool == "compare_models":
-            if len(files) != 2:
+            if len(named_files) != 2 or set(files) != set(named_files):
                 return None
-            return {"filenames": files}
+            return {"filenames": named_files}
         return None
 
     def _deterministic_decision(self, state, config):
