@@ -33,3 +33,26 @@ test('retry does not use unrelated more recent user messages', () => {
     [{ role: 'user', task_id: 't1', content: question },
      { role: 'user', task_id: 't2', content: '不相关的另一项分析' }]), question)
 })
+
+test('retry selects the newest failed question, not an earlier failed one', () => {
+  const previous = '统计 train_v3 的训练覆盖'
+  const latest = '只统计 fused-ring 的两个数量'
+  assert.equal(retryQueryForFailedTask('failed',
+    [{ id: 't1', status: 'failed' }, { id: 't2', status: 'completed' }, { id: 't3', status: 'failed' }],
+    [{ role: 'user', task_id: 't1', content: previous },
+     { role: 'user', task_id: 't2', content: '比较 MAE' },
+     { role: 'user', task_id: 't3', content: latest }]), latest)
+})
+
+test('old failed tasks must not become retry targets after a newer completed task', () => {
+  assert.equal(retryQueryForFailedTask('failed',
+    [{ id: 't1', status: 'failed' }, { id: 't2', status: 'completed' }],
+    [{ role: 'user', task_id: 't1', content: question },
+     { role: 'user', task_id: 't2', content: '之后的成功问题' }]), '')
+})
+
+test('when latest task fails, missing exact task-scoped query disables retry', () => {
+  assert.equal(retryQueryForFailedTask('failed',
+    [{ id: 't1', status: 'failed' }, { id: 't2', status: 'failed' }],
+    [{ role: 'user', task_id: 't1', content: question }]), '')
+})
