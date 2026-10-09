@@ -43,8 +43,24 @@ def satisfied(step):
                    o.get("effective_query_scope") == step.query_scope.model_dump(mode="json"))]
     names = {o.get("tool") for o in successful}
     if condition.kind == "SCHEMA":
-        return bool(names & SCHEMA_TOOLS) and set(condition.required_tools) <= names
-    return bool(condition.required_tools) and set(condition.required_tools) <= names
+        tools_ok = bool(names & SCHEMA_TOOLS) and (
+            bool(set(condition.required_tools) & names) if condition.mode == "ANY"
+            else set(condition.required_tools) <= names
+        )
+    else:
+        tools_ok = (
+            bool(set(condition.required_tools) & names) if condition.mode == "ANY"
+            else bool(condition.required_tools) and set(condition.required_tools) <= names
+        )
+    if not tools_ok:
+        return False
+    if condition.required_evidence and not set(condition.required_evidence) <= set(step.evidence_ids):
+        return False
+    if condition.required_artifacts:
+        observed_artifacts = {str(item.get("artifact_id")) for item in successful if item.get("artifact_id")}
+        if not set(condition.required_artifacts) <= observed_artifacts:
+            return False
+    return True
 
 
 def step_signature(step):

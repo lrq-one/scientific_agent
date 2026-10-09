@@ -102,7 +102,10 @@ class GoalContract(BaseModel):
 
 class CompletionCondition(BaseModel):
     kind: Literal["SCHEMA", "TOOL_RESULTS", "EXECUTED_ROWS", "ARTIFACT"] = "TOOL_RESULTS"
+    mode: Literal["ALL", "ANY"] = "ALL"
     required_tools: list[str] = Field(default_factory=list)
+    required_evidence: list[str] = Field(default_factory=list)
+    required_artifacts: list[str] = Field(default_factory=list)
     require_scope_match: bool = False
 
 

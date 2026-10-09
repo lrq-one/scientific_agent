@@ -53,6 +53,21 @@ def test_completion_predicate_requires_real_observation_and_scope():
     assert satisfied(step)
 
 
+def test_completion_predicate_supports_any_tool_and_required_evidence():
+    step = PlanStep(
+        step_id="either",
+        goal="obtain one valid source",
+        allowed_tools=["search_schema", "get_table_schema"],
+        completion_predicate=CompletionCondition(
+            mode="ANY", required_tools=["search_schema", "get_table_schema"], required_evidence=["ev-1"]
+        ),
+    )
+    step.observations = [{"tool": "search_schema", "success": True}]
+    assert not satisfied(step)
+    step.evidence_ids = ["ev-1"]
+    assert satisfied(step)
+
+
 def test_required_inputs_and_predicate_must_be_within_step_scope():
     step = PlanStep(
         step_id="rows",
