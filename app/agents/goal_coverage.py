@@ -74,6 +74,14 @@ def _requested_dimensions(state) -> list[str]:
     return list(dict.fromkeys(dimensions))
 
 
+def _explicit_csv_export_requested(question: str) -> bool:
+    """Check the user's literal deliverable, not an LLM-authored Plan hint."""
+    return any(re.search(pattern, question, re.I) for pattern in (
+        r"(?:导出|生成|保存|输出|下载|写入|export|download|save)[^。！？\\n]{0,50}csv",
+        r"csv[^。！？\\n]{0,30}(?:文件|导出|生成|保存|下载|file|export|download)",
+    ))
+
+
 def assess_goal_coverage(state, *, non_empirical: bool = False) -> GoalCoverage:
     if non_empirical:
         return GoalCoverage(status="SATISFIED", reason="non-empirical answer basis")
@@ -105,6 +113,19 @@ def assess_goal_coverage(state, *, non_empirical: bool = False) -> GoalCoverage:
                              for step in state.plan)
     requested_artifact = requested_artifact or "artifact" in state.required_deliverables
     missing_deliverables = ["artifact"] if requested_artifact and not state.artifacts else []
+    # A CSV explicitly requested in the original user goal cannot disappear
+    # because a model omitted it from Plan/required_deliverables. A chart or
+    # a generated filename is not proof that the requested CSV was saved.
+    if _explicit_csv_export_requested(state.user_request or state.goal):
+        persisted_csv = any(
+            call.get("tool") == "save_result_table" and result.success
+            and isinstance(result.data, dict)
+            and result.data.get("artifact_type") == "csv"
+            and result.data.get("artifact_id") in state.artifacts
+            for call, result in zip(state.tool_calls, state.observations)
+        )
+        if not persisted_csv:
+            missing_deliverables.append("csv_export")
     required_capabilities = {cap.value for step in state.plan for cap in step.required_capabilities}
     required_capabilities.update(item.removesuffix("_analysis") for item in state.required_deliverables
                                  if item.endswith("_analysis"))
