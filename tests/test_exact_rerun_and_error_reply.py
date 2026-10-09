@@ -84,7 +84,6 @@ def test_process_error_reply_uses_actual_recorded_error_not_fake_scientific_evid
     reply = compose_followup_response(decision, build_provenance(context), sufficiency)
     assert "previous query_checker could not execute" in reply
     assert "Evidence IDs" not in reply
-    assert "没" not in "Fake Evidence IDs"
 
 
 @pytest.mark.asyncio
