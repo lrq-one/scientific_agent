@@ -4,7 +4,7 @@
 
 - 分支：`codex/agent-protocol-audit-20261009`
 - 审计基线 HEAD：`fa5586baeb7354004f689b71218de7a20be63032`
-- 当前本地提交：`48a52ebfe008bffac9b507f84b14ace69cf2bfe1`（仅本地，未推送、未合并 `main`）。
+- P1 实现提交：`48a52ebfe008bffac9b507f84b14ace69cf2bfe1`；审计文档随后以本地文档提交补齐（仅本地，未推送、未合并 `main`）。
 - 原有未跟踪文件（压缩包、`__pycache__`、`evaluation/runs`、`reports` 及用户文档）未删除、未暂存、未覆盖。
 
 本轮工作树修改仅限：`app/agents/runtime.py` 的确定性 Plan 边界、`tests/test_product_expansion.py` 的过时 23 工具数量契约、`tests/test_p1_langgraph_no_model_e2e.py` 的新隔离验收，以及四份审计文档。上述修改已记录在当前本地提交；未触碰原有未跟踪文件。
