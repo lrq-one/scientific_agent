@@ -216,7 +216,7 @@ class PlanStep(BaseModel):
     selected_tools: list[str] = Field(default_factory=list)
     allowed_tools: list[str] = Field(default_factory=list)
     optional_tools: list[str] = Field(default_factory=list)
-    required_inputs: list[str] = Field(default_factory=list)
+    required_inputs: list[str] | dict[str, str] = Field(default_factory=list)
     status: Literal["pending", "running", "completed", "failed", "blocked", "skipped"] = "pending"
     plan_id: str | None = None
     query_scope: QueryScope | None = None

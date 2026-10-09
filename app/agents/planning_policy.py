@@ -45,7 +45,8 @@ class PlanningPolicy:
                 raise ValueError(f"invalid tool identifiers {sorted(invalid)}; exact allowed names={sorted(allowed_tools)}")
             if not set(step.optional_tools) <= step_tools:
                 raise ValueError(f"step {step_id}: optional_tools must be a subset of allowed_tools")
-            if any(not item or not isinstance(item, str) for item in step.required_inputs):
+            required_inputs = step.required_inputs.keys() if isinstance(step.required_inputs, dict) else step.required_inputs
+            if any(not item or not isinstance(item, str) for item in required_inputs):
                 raise ValueError(f"step {step_id}: required_inputs must contain nonempty field names")
             if not {cap.value for cap in step.required_capabilities} <= capabilities:
                 raise ValueError("plan references unavailable capabilities")
